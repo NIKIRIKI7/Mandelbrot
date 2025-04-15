@@ -1,0 +1,140 @@
+Архитектура приложения для визуализации множества Мандельброта
+1. Структура проекта (Maven Modules)
+mandelbrot-app/
+├── coordinate-converter/ (модуль из предыдущей работы)
+├── core/ (основная логика)
+│   ├── src/main/java/
+│   │   ├── model/
+│   │   │   ├── FractalState.java          // Состояние: область просмотра, итерации, цветовая схема
+│   │   │   ├── Viewport.java              // Математическая область (minX, maxX, minY, maxY)
+│   │   │   └── ColorScheme.java           // Интерфейс цветовой схемы
+│   │   ├── viewmodel/
+│   │   │   ├── FractalViewModel.java      // Основная ViewModel (логика изменений)
+│   │   │   ├── commands/                  // Паттерн Command для действий
+│   │   │   │   ├── ZoomCommand.java
+│   │   │   │   ├── PanCommand.java
+│   │   │   │   └── UndoManager.java       // История из 100 шагов (стек)
+│   │   ├── render/
+│   │   │   ├── FractalRenderer.java       // Многопоточный рендеринг (тайлы + ExecutorService)
+│   │   │   └── TileCalculator.java        // Разделение изображения на тайлы
+│   │   ├── services/
+│   │   │   ├── FileService.java           // Сохранение/загрузка .frac, JPEG, PNG
+│   │   │   └── AnimationService.java      // Обработка анимации (опционально)
+│   │   └── utils/
+│   │       ├── ComplexNumber.java         // Представление комплексного числа
+│   │       └── CoordinateConverter.java   // Интеграция из coordinate-converter
+│   └── src/test/java/                     // Юнит-тесты
+├── app/ (SWING-интерфейс)
+│   ├── src/main/java/
+│   │   ├── view/
+│   │   │   ├── MainFrame.java             // Главное окно (JFrame)
+│   │   │   ├── FractalPanel.java          // Панель отрисовки (JPanel)
+│   │   │   ├── MenuBar.java              // Меню (сохранение, загрузка, настройки)
+│   │   │   └── JuliaSetWindow.java        // Окно для множества Жюлиа (опционально)
+│   │   └── listeners/
+│   │       ├── MouseZoomListener.java     // Обработка выделения области
+│   │       └── MousePanListener.java      // Перемещение правой кнопкой
+└── pom.xml                                // Настройки Maven
+Use code with caution.
+2. Применяемые шаблоны и принципы
+MVVM:
+Model: FractalState, Viewport, ColorScheme.
+ViewModel: FractalViewModel (обрабатывает логику, уведомляет View об изменениях через PropertyChangeListener).
+View: MainFrame, FractalPanel (только отрисовка и ввод).
+Command:
+Действия (зум, панорамирование) инкапсулированы в классы команд (ZoomCommand, PanCommand).
+UndoManager хранит стек команд для отмены.
+Стратегия:
+Интерфейс ColorScheme с реализациями: NonlinearRGBScheme, GrayscaleScheme.
+Передача функций для фракталов через лямбды (Function<ComplexNumber, Integer>).
+Наблюдатель:
+FractalViewModel уведомляет FractalPanel об изменении состояния через PropertyChangeSupport.
+Фасад:
+FileService предоставляет единый интерфейс для работы с файлами.
+3. Ключевые компоненты
+Модель (Model)
+FractalState:
+Текущая область просмотра (Viewport).
+Максимальное число итераций.
+Активная цветовая схема.
+Состояние для Undo/Redo (через UndoManager).
+Viewport:
+Границы комплексной плоскости: minX, maxX, minY, maxY.
+Методы для масштабирования/панорамирования с сохранением пропорций.
+CoordinateConverter:
+Преобразование координат экрана ↔ комплексные числа.
+Интеграция из предыдущего модуля (JAR).
+ViewModel
+FractalViewModel:
+Принимает действия от View (зум, панорамирование, сохранение).
+Обновляет FractalState и запускает рендеринг.
+Связь с FractalRenderer для многопоточной генерации изображения.
+Рендеринг
+FractalRenderer:
+Разделяет изображение на тайлы (например, 16x16 пикселей).
+Использует ExecutorService с фиксированным пулом потоков.
+Для каждой точки вычисляет принадлежность к множеству Мандельброта:
+int iterations = calculateMandelbrot(new ComplexNumber(x, y));
+Color color = colorScheme.getColor(iterations);
+Use code with caution.
+Java
+Синхронизация: обновление BufferedImage через SwingUtilities.invokeLater().
+SWING-View
+FractalPanel:
+Рисует BufferedImage, полученную от FractalRenderer.
+Обрабатывает события мыши:
+Левый клик + перемещение → выделение области для зума.
+Правый клик + перемещение → панорамирование.
+Автоматически перерисовывается при изменении FractalState.
+MainFrame:
+Содержит меню (JMenuBar) с пунктами:
+Сохранить как: .frac, JPEG, PNG.
+Загрузить .frac.
+Настройки цветовой схемы.
+Опции анимации (опционально).
+4. Сохранение и загрузка
+.frac формат:
+Сериализация FractalState через ObjectOutputStream.
+Включает: Viewport, цветовую схему, максимальные итерации.
+Изображения (JPEG/PNG):
+Использование ImageIO.write().
+Добавление текста с координатами через Graphics2D.drawString().
+5. Многопоточность
+Рендеринг тайлов:
+ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+List<Future<?>> futures = new ArrayList<>();
+for (Tile tile : tiles) {
+    futures.add(executor.submit(() -> renderTile(tile)));
+}
+// Ожидание завершения всех задач
+for (Future<?> future : futures) {
+    future.get();
+}
+Use code with caution.
+Java
+6. Тестирование
+Юнит-тесты:
+FractalStateTest: проверка корректности изменений области просмотра.
+UndoManagerTest: проверка отмены 100 действий.
+CoordinateConverterTest: точность преобразования координат.
+Интеграционные тесты:
+Рендеринг простых областей (например, точка (0,0) должна быть черной).
+Сериализация/десериализация .frac.
+7. Опциональные задачи (Extra)
+Julia Set:
+При двойном клике на FractalPanel открывается JuliaSetWindow.
+Использует ту же ColorScheme, но формулу:
+z_{n+1} = z_n^2 + c (где c — выбранная точка Мандельброта).
+Use code with caution.
+Java
+Динамические итерации:
+При зуме увеличивать maxIterations по формуле: maxIterations = базовое_значение * log(scale).
+8. Сборка и линтинг
+Maven:
+Плагины: maven-compiler-plugin, maven-surefire-plugin.
+Зависимости: Apache Commons Imaging (для работы с JPEG/PNG), JUnit.
+Checkstyle:
+Конфигурация Google Java Style.
+Проверка именования, отступов, Javadoc.
+Итог: Архитектура обеспечивает гибкость (смена цветовых схем, форматов сохранения), производительность (многопоточность) и соответствие требованиям (масштабирование, аспект, Undo). Laboratory Work #3
+Fractal: Mandelbrot Set
