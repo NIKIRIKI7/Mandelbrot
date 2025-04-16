@@ -4,43 +4,42 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
+        <!-- Reference to the parent POM -->
         <groupId>com.example</groupId>
         <artifactId>mandelbrot-app-parent</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>mandelbrot-app</artifactId> <!-- Исполняемый модуль -->
+    <artifactId>mandelbrot-app</artifactId> <!-- Artifact ID for this module -->
     <name>Mandelbrot Swing Application</name>
+    <packaging>jar</packaging> <!-- This module produces a JAR -->
 
     <dependencies>
-        <!-- Зависимость от модуля с основной логикой -->
+        <!-- Dependency on the core logic module -->
+        <!-- Version is inherited from parent's dependencyManagement for this module -->
         <dependency>
             <groupId>com.example</groupId>
             <artifactId>mandelbrot-core</artifactId>
-            <version>${project.version}</version>
+            <version>${project.version}</version> <!-- Explicitly use project version here -->
         </dependency>
 
-        <!-- Зависимость от вашего конвертера, если он нужен напрямую в UI, что маловероятно при MVVM -->
-        <!--
-        <dependency>
-            <groupId>com.yourgroup</groupId>
-            <artifactId>coordinate-converter</artifactId>
-        </dependency>
-        -->
+        <!-- The UI should ideally not depend directly on the converter -->
+        <!-- Test dependencies are inherited if needed, add specific UI test frameworks here -->
+
     </dependencies>
 
      <build>
          <plugins>
-             <!-- Плагин для создания исполняемого JAR -->
+             <!-- Plugin to create an executable JAR with dependencies -->
              <plugin>
                  <groupId>org.apache.maven.plugins</groupId>
                  <artifactId>maven-assembly-plugin</artifactId>
-                 <version>3.6.0</version>
+                 <!-- Version is inherited from parent pluginManagement -->
                  <configuration>
                      <archive>
                          <manifest>
-                             <!-- Укажите главный класс вашего Swing приложения -->
-                             <mainClass>com.example.mandelbrot.app.view.MainFrame</mainClass>
+                             <!-- Correct Main Class based on package declaration -->
+                             <mainClass>view.MainFrame</mainClass>
                          </manifest>
                      </archive>
                      <descriptorRefs>
@@ -49,8 +48,8 @@
                  </configuration>
                  <executions>
                      <execution>
-                         <id>make-assembly</id>
-                         <phase>package</phase>
+                         <id>make-assembly</id> <!-- this is used for inheritance merges -->
+                         <phase>package</phase> <!-- bind to the packaging phase -->
                          <goals>
                              <goal>single</goal>
                          </goals>
