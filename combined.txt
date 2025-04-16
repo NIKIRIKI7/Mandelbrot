@@ -335,25 +335,31 @@ public class MenuBar extends JMenuBar {
 
 // File: app/src/main/java/view/FractalPanel.java
 
+// File: app/src/main/java/view/FractalPanel.java
 package view;
 
 import listeners.MousePanListener;
 import listeners.MouseZoomListener;
+import model.ColorScheme; // Импорт нужен для передачи в JuliaSetWindow
 import model.FractalState;
 import render.FractalRenderer;
+import utils.ComplexNumber; // Импорт нужен для координат Жюлиа
+import utils.CoordinateConverter; // Импорт нужен для координат Жюлиа
 import viewmodel.FractalViewModel;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.MouseAdapter; // <-- Импорт для листенера
+import java.awt.event.MouseEvent;  // <-- Импорт для листенера
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 
 /**
  * JPanel responsible for displaying the rendered fractal image.
- * Listens to ViewModel updates and handles mouse interactions.
+ * Listens to ViewModel updates and handles mouse interactions (zoom, pan, Julia set invocation).
  */
 public class FractalPanel extends JPanel implements PropertyChangeListener {
 
@@ -367,6 +373,8 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
 
     /**
      * Constructs the FractalPanel with a ViewModel and Renderer.
+     * Initializes mouse listeners for zooming, panning, and opening Julia Set window on double-click.
+     * Listens for component resize/show events and ViewModel state changes to trigger rendering.
      *
      * @param viewModel The application's ViewModel.
      * @param renderer  The fractal renderer.
@@ -380,43 +388,137 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
         setBackground(Color.BLACK);
         setOpaque(true);
 
+        // Инициализация слушателей
         zoomListener = new MouseZoomListener(viewModel, this);
         panListener = new MousePanListener(viewModel, this);
+
+        // Добавление слушателей событий мыши
         addMouseListener(zoomListener);
         addMouseMotionListener(zoomListener);
-        addMouseWheelListener(zoomListener);
+        // ИЗМЕНЕНО: Удалена строка addMouseWheelListener(zoomListener),
+        // так как MouseZoomListener не реализует MouseWheelListener в предоставленной версии.
+        // Если зум колесом нужен, MouseZoomListener должен быть доработан и строка возвращена.
+        // addMouseWheelListener(zoomListener);
         addMouseListener(panListener);
         addMouseMotionListener(panListener);
 
+        // Слушатель изменения размера и видимости компонента
         addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
-                if (getWidth() > 0 && getHeight() > 0) {
+                 // Рендерим только если панель видима и имеет корректные размеры
+                 if (isShowing() && getWidth() > 0 && getHeight() > 0) {
                     System.out.println("Panel resized. Triggering render.");
                     triggerRender();
                 }
             }
+
+            // Также триггерим рендер при первом показе панели (после изменения размера)
+            @Override
+            public void componentShown(ComponentEvent e) {
+                 if (getWidth() > 0 && getHeight() > 0) {
+                   System.out.println("Panel shown. Triggering render.");
+                   triggerRender();
+               }
+            }
+       });
+
+       // --- Добавляем слушатель для окна Жюлиа по двойному клику ---
+       /**
+        * Mouse listener to detect double-clicks and open the corresponding Julia Set window.
+        */
+       addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                // Проверяем двойной клик левой кнопкой мыши
+                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
+                    System.out.println("Double-click detected at: " + e.getPoint());
+                    openJuliaSetWindow(e.getPoint());
+                }
+            }
         });
+       // -------------------------------------------------------------
     }
 
     /**
-     * Triggers rendering of the fractal based on the current state and panel size.
+     * Opens the Julia Set window corresponding to the complex number
+     * at the clicked screen coordinates.
+     * Retrieves current color scheme and iteration count from the ViewModel
+     * to initialize the Julia Set view.
+     *
+     * @param screenPoint The Point on the panel where the double-click occurred.
+     */
+    private void openJuliaSetWindow(Point screenPoint) {
+        int w = getWidth();
+        int h = getHeight();
+        FractalState currentState = viewModel.getCurrentState(); // Get current state
+
+        // Basic validation
+        if (w <= 0 || h <= 0 || currentState == null) {
+            System.err.println("Cannot open Julia Set: Panel size or state invalid.");
+            JOptionPane.showMessageDialog(this,
+                "Cannot open Julia Set window.\nPanel size or fractal state is invalid.",
+                "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Convert screen coordinates to complex number 'c'
+        ComplexNumber c = CoordinateConverter.screenToComplex(
+            screenPoint.x, screenPoint.y, w, h, currentState.getViewport()
+        );
+
+        if (c == null) {
+            System.err.println("Cannot open Julia Set: Failed to convert screen coordinates.");
+             JOptionPane.showMessageDialog(this,
+                "Cannot open Julia Set window.\nFailed to determine complex coordinates for the clicked point.",
+                "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Get current settings to pass to the Julia window
+        ColorScheme currentScheme = currentState.getColorScheme();
+        int currentIterations = currentState.getMaxIterations();
+
+        // Find the parent JFrame
+        JFrame owner = (JFrame) SwingUtilities.getWindowAncestor(this);
+        if (owner == null) {
+             System.err.println("Cannot determine owner frame for Julia Set window. It will be centered on screen.");
+             // ИЗМЕНЕНО: Устанавливаем owner в null вместо создания нового JFrame.
+             // setLocationRelativeTo(null) корректно обработает этот случай.
+             owner = null;
+        }
+
+        // Create and display the Julia window on the Event Dispatch Thread
+        final JFrame finalOwner = owner; // Final variable for use in lambda
+        SwingUtilities.invokeLater(() -> {
+            JuliaSetWindow juliaWindow = new JuliaSetWindow(finalOwner, c, currentScheme, currentIterations);
+            juliaWindow.display(); // Show the window
+        });
+    }
+
+
+    /**
+     * Triggers asynchronous rendering of the fractal based on the current ViewModel state
+     * and the panel's current dimensions. Cancels any ongoing render task first.
+     * Updates the status message and requests a repaint to show the loading indicator.
      */
     public void triggerRender() {
         int width = getWidth();
         int height = getHeight();
+
+        // Skip rendering if panel is not ready or dimensions are invalid
         if (!isShowing() || width <= 0 || height <= 0 || renderer == null) {
             System.out.println("Skipping render: Size " + width + "x" + height + ", Showing: " + isShowing());
             statusMessage = (width <= 0 || height <= 0) ? "Panel size invalid." : "Panel not ready.";
             isRendering = false;
-            repaint();
+            repaint(); // Repaint to show the status message
             return;
         }
 
         System.out.println("Triggering render for size: " + width + "x" + height);
         isRendering = true;
         statusMessage = "Rendering...";
-        repaint();
+        repaint(); // Show "Rendering..." message and potentially loading indicator
 
         FractalState currentState = viewModel.getCurrentState();
         if (currentState == null) {
@@ -427,43 +529,62 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
             return;
         }
 
+        // Call the renderer asynchronously
         renderer.render(currentState, width, height,
+                // onComplete callback
                 newImage -> {
-                    isRendering = false;
+                    isRendering = false; // Mark rendering as finished
                     if (newImage != null) {
-                        this.fractalImage = newImage;
+                        this.fractalImage = newImage; // Update the image
+                        // Update status with viewport details
+                        FractalState completedState = viewModel.getCurrentState(); // Get state again in case it changed slightly
                         statusMessage = String.format("Ready. Viewport: X=[%.4g, %.4g], Y=[%.4g, %.4g], Iter: %d",
-                                currentState.getViewport().getMinX(), currentState.getViewport().getMaxX(),
-                                currentState.getViewport().getMinY(), currentState.getViewport().getMaxY(),
-                                currentState.getMaxIterations());
+                                completedState.getViewport().getMinX(), completedState.getViewport().getMaxX(),
+                                completedState.getViewport().getMinY(), completedState.getViewport().getMaxY(),
+                                completedState.getMaxIterations());
                     } else {
+                        // Handle rendering error
                         statusMessage = "Error during rendering.";
+                        this.fractalImage = null; // Ensure no old image is shown
                     }
-                    repaint();
+                    repaint(); // Redraw the panel with the new image or error status
                 },
+                // onCancel callback
                 () -> {
-                    isRendering = false;
-                    FractalState cancelledState = viewModel.getCurrentState();
+                    isRendering = false; // Mark rendering as finished (cancelled)
+                    FractalState cancelledState = viewModel.getCurrentState(); // Get state at cancellation time
                     statusMessage = String.format("Cancelled. Viewport: X=[%.4g, %.4g], Y=[%.4g, %.4g], Iter: %d",
                             cancelledState.getViewport().getMinX(), cancelledState.getViewport().getMaxX(),
                             cancelledState.getViewport().getMinY(), cancelledState.getViewport().getMaxY(),
                             cancelledState.getMaxIterations());
-                    repaint();
+                    // Do not clear the image, leave the partially rendered or previous one
+                    repaint(); // Update status message
                 }
         );
     }
 
+    /**
+     * Paints the component. Draws the background, the fractal image (or status message),
+     * the loading indicator if rendering, and the zoom selection rectangle.
+     *
+     * @param g The Graphics context to paint on.
+     */
     @Override
     protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
+        super.paintComponent(g); // Paint background
 
+        // Get current state atomically
         BufferedImage currentImage = this.fractalImage;
         boolean renderingNow = this.isRendering;
         String currentStatus = this.statusMessage;
 
+        // Draw the fractal image or a status message if image is null
         if (currentImage != null) {
             g.drawImage(currentImage, 0, 0, this);
         } else {
+            // Draw status message centered if no image
+            g.setColor(Color.DARK_GRAY); // Use a less bright color for background text
+            g.fillRect(0,0, getWidth(), getHeight()); // Fill background to obscure artifacts
             g.setColor(Color.WHITE);
             g.setFont(new Font("SansSerif", Font.PLAIN, 16));
             FontMetrics fm = g.getFontMetrics();
@@ -471,44 +592,70 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
             int stringWidth = fm.stringWidth(message);
             int stringAscent = fm.getAscent();
             int x = (getWidth() - stringWidth) / 2;
-            int y = (getHeight() + stringAscent) / 2 - fm.getDescent();
+            int y = (getHeight() + stringAscent) / 2 - fm.getDescent(); // Center vertically
             g.drawString(message, x, y);
         }
 
+        // Draw loading indicator overlay if rendering is in progress
         if (renderingNow) {
             drawLoadingIndicator(g);
         }
 
+        // Draw the zoom selection rectangle (if user is dragging)
         zoomListener.drawSelectionRectangle(g);
     }
 
     /**
-     * Draws a loading indicator during rendering.
+     * Draws a semi-transparent overlay with "Rendering..." text
+     * to indicate background processing.
      *
      * @param g The Graphics context to draw on.
      */
     private void drawLoadingIndicator(Graphics g) {
-        g.setColor(new Color(0, 0, 0, 150));
-        g.fillRect(0, getHeight() / 2 - 20, getWidth(), 40);
+        // Semi-transparent black overlay
+        g.setColor(new Color(0, 0, 0, 150)); // Black with alpha
+        g.fillRect(0, getHeight() / 2 - 20, getWidth(), 40); // Centered vertically
+
+        // White text on the overlay
         g.setColor(Color.WHITE);
         g.setFont(new Font("SansSerif", Font.BOLD, 18));
         FontMetrics fm = g.getFontMetrics();
         String loadingText = "Rendering...";
         int stringWidth = fm.stringWidth(loadingText);
         int stringAscent = fm.getAscent();
+        // Center text horizontally and vertically within the overlay rect
         int x = (getWidth() - stringWidth) / 2;
         int y = (getHeight() + stringAscent) / 2 - fm.getDescent();
         g.drawString(loadingText, x, y);
     }
 
+    /**
+     * Listens for property changes from the ViewModel.
+     * Specifically triggers a re-render when the {@code FractalViewModel.PROPERTY_STATE} changes.
+     *
+     * @param evt The PropertyChangeEvent object.
+     */
     @Override
     public void propertyChange(PropertyChangeEvent evt) {
+        // Check if the fractal state property has changed
         if (FractalViewModel.PROPERTY_STATE.equals(evt.getPropertyName())) {
             System.out.println("FractalPanel received state update. Triggering render.");
-            triggerRender();
+            // Ensure rendering happens on the EDT if state change wasn't triggered by user interaction
+            // Though triggerRender itself is safe, direct calls following state changes might benefit
+             if (SwingUtilities.isEventDispatchThread()) {
+                 triggerRender();
+             } else {
+                 SwingUtilities.invokeLater(this::triggerRender);
+             }
         }
     }
 
+    /**
+     * Specifies the preferred size for this panel.
+     * Used by layout managers.
+     *
+     * @return The preferred dimension (800x600).
+     */
     @Override
     public Dimension getPreferredSize() {
         return new Dimension(800, 600);
@@ -516,17 +663,115 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
 
     /**
      * Gets the currently displayed fractal image.
+     * This can be used, for example, for saving the image.
+     * Returns a volatile read of the image buffer.
      *
-     * @return The current BufferedImage, or null if not yet rendered.
+     * @return The current BufferedImage, or null if not yet rendered or if rendering failed.
      */
     public BufferedImage getCurrentImage() {
-        return this.fractalImage;
+        return this.fractalImage; // Return the volatile reference
     }
 }
 
 // File: app/src/main/java/view/JuliaSetWindow.java
 
+// File: app/src/main/java/view/JuliaSetWindow.java
+package view;
 
+import math.FractalFunction;
+import model.ColorScheme;
+import model.FractalState;
+import model.Viewport;
+import render.FractalRenderer;
+import utils.ComplexNumber;
+import viewmodel.FractalViewModel;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+
+/**
+ * Окно для отображения множества Жюлиа, связанного с точкой 'c'
+ * из множества Мандельброта.
+ */
+public class JuliaSetWindow extends JFrame {
+
+    private final FractalViewModel viewModel;
+    private final FractalRenderer renderer;
+    private final FractalPanel fractalPanel;
+    private final ComplexNumber c; // Параметр для этого множества Жюлиа
+
+    /**
+     * Создает окно для отображения множества Жюлиа.
+     *
+     * @param ownerFrame       Родительское окно (для позиционирования).
+     * @param c                Параметр 'c' для множества Жюлиа.
+     * @param initialColorScheme Начальная цветовая схема (берется из основного окна).
+     * @param initialIterations Начальное количество итераций (берется из основного окна).
+     */
+    public JuliaSetWindow(JFrame ownerFrame, ComplexNumber c, ColorScheme initialColorScheme, int initialIterations) {
+        super("Julia Set Explorer (c = " + String.format("%.4f %s %.4fi", c.getReal(), c.getImaginary() >= 0 ? "+" : "-", Math.abs(c.getImaginary())) + ")"); // Заголовок окна
+        this.c = c;
+
+        // Создаем СВОИ экземпляры рендерера и ViewModel для этого окна
+        this.renderer = new FractalRenderer(); // Независимый рендерер
+        this.viewModel = new FractalViewModel(renderer); // Независимый ViewModel
+
+        // Создаем начальное состояние для Жюлиа
+        FractalState juliaState = createInitialJuliaState(c, initialColorScheme, initialIterations);
+        this.viewModel.loadState(juliaState); // Загружаем начальное состояние (сбросит undo)
+
+        // Создаем панель отрисовки
+        this.fractalPanel = new FractalPanel(viewModel, renderer);
+
+        // Настройка окна
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE); // Закрывать только это окно
+        setSize(600, 500); // Начальный размер
+        setLocationRelativeTo(ownerFrame); // Позиционировать относительно главного окна
+        setLayout(new BorderLayout());
+        add(fractalPanel, BorderLayout.CENTER);
+
+        // Добавляем Listener для остановки рендерера при закрытии окна
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                System.out.println("Shutting down Julia set renderer...");
+                renderer.shutdown(); // Останавливаем потоки рендерера этого окна
+                System.out.println("Julia set renderer shut down.");
+            }
+        });
+
+         // Можно добавить простое меню (например, только Save Image) или не добавлять меню вовсе
+         // MenuBar juliaMenuBar = new MenuBar(viewModel, new FileService(), fractalPanel, this);
+         // setJMenuBar(juliaMenuBar); // Опционально
+
+        System.out.println("Julia Set window created for c = " + c);
+    }
+
+    /**
+     * Создает начальное состояние для множества Жюлиа.
+     *
+     * @param cParam           Параметр 'c'.
+     * @param colorScheme      Цветовая схема.
+     * @param maxIterations    Максимум итераций.
+     * @return Начальное FractalState для множества Жюлиа.
+     */
+    private FractalState createInitialJuliaState(ComplexNumber cParam, ColorScheme colorScheme, int maxIterations) {
+        // Viewport по умолчанию для множества Жюлиа (часто [-2, 2] x [-2, 2])
+        Viewport juliaViewport = new Viewport(-2.0, 2.0, -2.0, 2.0);
+        // Создаем функцию Жюлиа с нашим параметром 'c'
+        FractalFunction juliaFunction = new JuliaFunction(cParam);
+
+        return new FractalState(juliaViewport, maxIterations, colorScheme, juliaFunction);
+    }
+
+    // Метод для показа окна (вызывается извне)
+    public void display() {
+        setVisible(true);
+        // Первый рендер запустится панелью при изменении размера или первом показе
+    }
+}
 
 // File: app/src/main/java/view/MainFrame.java
 
@@ -894,47 +1139,43 @@ public class GrayscaleScheme implements ColorScheme {
 // File: core/src/main/java/model/FractalState.java
 package model;
 
-// ColorScheme импортируется без model. префикса, т.к. находится в том же пакете
-// import model.ColorScheme; - избыточно
-
+import math.FractalFunction; // <-- Добавлен импорт
+import math.MandelbrotFunction; // <-- Добавлен импорт для дефолтной функции
 import java.io.Serializable;
 import java.util.Objects;
 
 /**
  * Представляет полное состояние представления фрактала в определенный момент времени.
- * Включает область просмотра (Viewport), параметры рендеринга (maxIterations) и цветовую схему.
- * Экземпляры этого класса являются неизменяемыми (immutable). Для модификации состояния
- * используются методы `with*`, которые возвращают новый экземпляр с измененными данными.
+ * Включает область просмотра (Viewport), параметры рендеринга (maxIterations),
+ * цветовую схему и функцию расчета фрактала.
+ * Экземпляры этого класса являются неизменяемыми (immutable).
  */
-public final class FractalState implements Serializable { // final для гарантии неизменяемости
-    /**
-     * Версия для сериализации.
-     */
-    private static final long serialVersionUID = 1L;
+public final class FractalState implements Serializable {
+    private static final long serialVersionUID = 2L; // <-- Увеличена версия из-за добавления поля
 
-    /** Текущая область просмотра в комплексной плоскости. */
     private final Viewport viewport;
-    /** Максимальное количество итераций для расчета принадлежности точки множеству. */
     private final int maxIterations;
-    /** Цветовая схема, используемая для рендеринга. */
     private final ColorScheme colorScheme;
-    // UndoManager здесь не хранится, он является частью логики ViewModel, а не состояния данных.
+    private final FractalFunction fractalFunction; // <-- Новое поле
+
+    // Константа для дефолтной функции
+    private static final FractalFunction DEFAULT_FRACTAL_FUNCTION = new MandelbrotFunction();
 
     /**
      * Создает новый экземпляр состояния фрактала.
      *
-     * @param viewport      Текущая область просмотра. Не может быть null.
-     * @param maxIterations Максимальное количество итераций. Должно быть положительным числом.
-     * @param colorScheme   Цветовая схема для рендеринга. Не может быть null.
-     * @throws NullPointerException если viewport или colorScheme равны null.
+     * @param viewport        Текущая область просмотра. Не может быть null.
+     * @param maxIterations   Максимальное количество итераций. Должно быть положительным числом.
+     * @param colorScheme     Цветовая схема для рендеринга. Не может быть null.
+     * @param fractalFunction Функция расчета фрактала. Не может быть null.
+     * @throws NullPointerException если viewport, colorScheme или fractalFunction равны null.
      * @throws IllegalArgumentException если maxIterations не положительное.
      */
-    public FractalState(Viewport viewport, int maxIterations, ColorScheme colorScheme) {
-        // Проверка аргументов на null с помощью Objects.requireNonNull
+    public FractalState(Viewport viewport, int maxIterations, ColorScheme colorScheme, FractalFunction fractalFunction) {
         this.viewport = Objects.requireNonNull(viewport, "Viewport не может быть null");
         this.colorScheme = Objects.requireNonNull(colorScheme, "Цветовая схема не может быть null");
+        this.fractalFunction = Objects.requireNonNull(fractalFunction, "Функция фрактала не может быть null"); // <-- Проверка нового поля
 
-        // Проверка корректности maxIterations
         if (maxIterations <= 0) {
             throw new IllegalArgumentException("Максимальное количество итераций должно быть положительным");
         }
@@ -943,74 +1184,61 @@ public final class FractalState implements Serializable { // final для гар
 
     // --- Геттеры ---
 
-    /**
-     * Возвращает текущую область просмотра.
-     * @return {@link Viewport}.
-     */
     public Viewport getViewport() {
         return viewport;
     }
 
-    /**
-     * Возвращает максимальное количество итераций.
-     * @return Максимальное количество итераций.
-     */
     public int getMaxIterations() {
         return maxIterations;
     }
 
-    /**
-     * Возвращает активную цветовую схему.
-     * @return {@link ColorScheme}.
-     */
     public ColorScheme getColorScheme() {
         return colorScheme;
     }
 
-     // --- Методы для создания нового состояния с изменениями (паттерн copy-on-write) ---
-
     /**
-     * Создает новый экземпляр FractalState с указанной областью просмотра.
-     * Остальные параметры (maxIterations, colorScheme) остаются прежними.
-     *
-     * @param newViewport Новая область просмотра {@link Viewport}.
-     * @return Новый экземпляр {@link FractalState}.
+     * Возвращает активную функцию расчета фрактала.
+     * @return {@link FractalFunction}.
      */
+    public FractalFunction getFractalFunction() { // <-- Геттер для нового поля
+        return fractalFunction;
+    }
+
+    // --- Методы для создания нового состояния с изменениями ---
+
     public FractalState withViewport(Viewport newViewport) {
-        return new FractalState(newViewport, this.maxIterations, this.colorScheme);
+        // Передаем текущую fractalFunction в новый state
+        return new FractalState(newViewport, this.maxIterations, this.colorScheme, this.fractalFunction);
     }
 
-    /**
-     * Создает новый экземпляр FractalState с указанным максимальным количеством итераций.
-     * Остальные параметры (viewport, colorScheme) остаются прежними.
-     *
-     * @param newMaxIterations Новое максимальное количество итераций.
-     * @return Новый экземпляр {@link FractalState}.
-     */
     public FractalState withMaxIterations(int newMaxIterations) {
-        // Проверка корректности нового значения может быть добавлена здесь или в конструкторе
-        return new FractalState(this.viewport, newMaxIterations, this.colorScheme);
+        // Передаем текущую fractalFunction в новый state
+        return new FractalState(this.viewport, newMaxIterations, this.colorScheme, this.fractalFunction);
+    }
+
+    public FractalState withColorScheme(ColorScheme newColorScheme) {
+        // Передаем текущую fractalFunction в новый state
+        return new FractalState(this.viewport, this.maxIterations, newColorScheme, this.fractalFunction);
     }
 
     /**
-     * Создает новый экземпляр FractalState с указанной цветовой схемой.
-     * Остальные параметры (viewport, maxIterations) остаются прежними.
+     * Создает новый экземпляр FractalState с указанной функцией расчета фрактала.
+     * Остальные параметры остаются прежними.
      *
-     * @param newColorScheme Новая цветовая схема {@link ColorScheme}.
+     * @param newFractalFunction Новая функция расчета {@link FractalFunction}.
      * @return Новый экземпляр {@link FractalState}.
      */
-    public FractalState withColorScheme(ColorScheme newColorScheme) {
-        return new FractalState(this.viewport, this.maxIterations, newColorScheme);
+    public FractalState withFractalFunction(FractalFunction newFractalFunction) { // <-- Метод для изменения функции
+        return new FractalState(this.viewport, this.maxIterations, this.colorScheme, newFractalFunction);
     }
+
 
     // --- Стандартные методы Object ---
 
     /**
      * Сравнивает это состояние с другим объектом на равенство.
-     * Два состояния равны, если равны их viewport, maxIterations и классы их цветовых схем.
-     * Сравнение схем по классу используется, так как конкретные экземпляры схем
-     * без параметров (как GrayscaleScheme) считаются взаимозаменяемыми.
-     * Если бы схемы имели параметры, потребовалось бы переопределить equals/hashCode в них.
+     * Два состояния равны, если равны их viewport, maxIterations,
+     * классы их цветовых схем и классы их функций фрактала.
      *
      * @param o Объект для сравнения.
      * @return true, если объекты равны, иначе false.
@@ -1018,38 +1246,36 @@ public final class FractalState implements Serializable { // final для гар
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        // Проверка на null и совпадение классов
         if (o == null || getClass() != o.getClass()) return false;
         FractalState that = (FractalState) o;
-        // Сравнение полей
         return maxIterations == that.maxIterations &&
                Objects.equals(viewport, that.viewport) &&
-               // Сравниваем классы цветовых схем, а не сами экземпляры
-               Objects.equals(colorScheme.getClass(), that.colorScheme.getClass());
+               Objects.equals(colorScheme.getClass(), that.colorScheme.getClass()) &&
+               Objects.equals(fractalFunction.getClass(), that.fractalFunction.getClass()); // <-- Сравнение по классу функции
+               // Если функции имеют параметры (как Julia), нужно сравнивать и их,
+               // переопределив equals/hashCode в конкретных реализациях FractalFunction.
+               // Для простоты пока сравниваем только классы.
     }
 
     /**
      * Вычисляет хэш-код для этого состояния.
-     * Основан на хэш-кодах viewport, maxIterations и класса цветовой схемы.
+     * Основан на хэш-кодах viewport, maxIterations, класса цветовой схемы и класса функции фрактала.
      *
      * @return Хэш-код объекта.
      */
     @Override
     public int hashCode() {
-        // Хэш-код вычисляется на основе тех же полей, что и в equals
-        return Objects.hash(viewport, maxIterations, colorScheme.getClass());
+        // Включаем класс функции в хэш-код
+        return Objects.hash(viewport, maxIterations, colorScheme.getClass(), fractalFunction.getClass());
     }
 
-    /**
-     * Возвращает строковое представление состояния.
-     * @return Строковое представление.
-     */
     @Override
     public String toString() {
         return "FractalState{" +
-               "viewport=" + viewport + // Используется toString() из Viewport
+               "viewport=" + viewport +
                ", maxIterations=" + maxIterations +
-               ", colorScheme=" + colorScheme.getName() + // Используем имя схемы
+               ", colorScheme=" + colorScheme.getName() +
+               ", fractalFunction=" + fractalFunction.getName() + // <-- Добавлено имя функции
                '}';
     }
 
@@ -1057,13 +1283,18 @@ public final class FractalState implements Serializable { // final для гар
 
     /**
      * Создает начальное состояние фрактала по умолчанию.
-     * Использует {@link Viewport#DEFAULT_VIEWPORT}, 100 итераций и {@link NonlinearRGBScheme}.
+     * Использует {@link Viewport#DEFAULT_VIEWPORT}, 100 итераций, {@link NonlinearRGBScheme}
+     * и {@link MandelbrotFunction}.
      *
      * @return Новый экземпляр {@link FractalState} с настройками по умолчанию.
      */
     public static FractalState createDefault() {
-        // Устанавливаем разумные начальные значения
-        return new FractalState(Viewport.DEFAULT_VIEWPORT, 100, new NonlinearRGBScheme());
+        return new FractalState(
+            Viewport.DEFAULT_VIEWPORT,
+            100, // Начальное количество итераций
+            new NonlinearRGBScheme(),
+            DEFAULT_FRACTAL_FUNCTION // Используем функцию Мандельброта по умолчанию
+        );
     }
 }
 
@@ -1439,6 +1670,110 @@ public interface ColorScheme extends Serializable {
     }
 }
 
+// File: core/src/main/java/math/MandelbrotFunction.java
+
+// File: core/src/main/java/math/MandelbrotFunction.java
+package math;
+
+import utils.ComplexNumber;
+
+/**
+ * Реализация FractalFunction для классического множества Мандельброта.
+ * Формула итерации: z_{n+1} = z_n^2 + c, где z0 = 0, а c - точка плоскости.
+ */
+public class MandelbrotFunction implements FractalFunction {
+    /**
+     * Версия для сериализации.
+     */
+    private static final long serialVersionUID = 1L;
+
+    /*
+     * {@inheritDoc}
+     * Для множества Мандельброта начальное значение z всегда 0,
+     * а параметр c равен самой проверяемой точке (в имплементации используем параметр c как точку).
+     * Параметр z0 из интерфейса здесь игнорируется, т.к. он всегда 0.
+     */
+    @Override
+    public int calculateIterations(ComplexNumber z0Ignored, ComplexNumber c, int maxIterations) {
+        // Для Мандельброта z всегда начинается с 0
+        ComplexNumber z = new ComplexNumber(0, 0);
+        // c - это точка, которую мы проверяем (передана как второй аргумент)
+
+        for (int i = 0; i < maxIterations; ++i) {
+            // Проверка выхода за радиус 2 (используем квадрат модуля для оптимизации)
+            if (z.magnitudeSquared() > 4.0) {
+                return i; // Точка вне множества
+            }
+            // Итерация: z = z^2 + c
+            z = z.square().add(c);
+        }
+        // Если цикл завершился, точка считается принадлежащей множеству
+        return maxIterations;
+    }
+
+    @Override
+    public String getName() {
+        return "Mandelbrot Set";
+    }
+
+     // equals и hashCode для Serializable не обязательны,
+     // но могут быть полезны, если сравнивать функции
+     @Override
+     public boolean equals(Object obj) {
+         return obj instanceof MandelbrotFunction; // Все экземпляры эквивалентны
+     }
+
+     @Override
+     public int hashCode() {
+         return MandelbrotFunction.class.hashCode();
+     }
+}
+
+// File: core/src/main/java/math/JuliaFunction.java
+
+
+
+// File: core/src/main/java/math/FractalFunction.java
+
+// File: core/src/main/java/math/FractalFunction.java
+package math;
+
+import utils.ComplexNumber;
+import java.io.Serializable;
+
+/**
+ * Функциональный интерфейс для вычисления количества итераций для точки фрактала.
+ * Позволяет абстрагироваться от конкретного типа фрактала (Мандельброт, Жюлиа и т.д.).
+ * Должен быть Serializable для сохранения в FractalState.
+ */
+@FunctionalInterface
+public interface FractalFunction extends Serializable {
+    /**
+     * Версия для сериализации.
+     */
+    long serialVersionUID = 1L;
+
+    /**
+     * Вычисляет количество итераций для заданной точки и параметра.
+     *
+     * @param z0            Начальная точка итерации (обычно точка комплексной плоскости для проверки).
+     * @param c             Параметр функции (константа для множества Жюлиа,
+     *                      или та же точка z0 для множества Мандельброта).
+     * @param maxIterations Максимальное количество итераций.
+     * @return Количество выполненных итераций до выхода за предел,
+     *         или maxIterations, если точка принадлежит множеству.
+     */
+    int calculateIterations(ComplexNumber z0, ComplexNumber c, int maxIterations);
+
+    /**
+     * Возвращает имя функции фрактала (для отладки или UI).
+     * @return Имя функции.
+     */
+    default String getName() {
+        return this.getClass().getSimpleName();
+    }
+}
+
 // File: core/src/main/java/utils/CoordinateConverter.java
 
 // File: core/src/main/java/utils/CoordinateConverter.java
@@ -1759,7 +2094,6 @@ package viewmodel;
 
 import model.ColorScheme;
 import model.FractalState;
-import model.Viewport;
 import render.FractalRenderer;
 import viewmodel.commands.Command;
 import viewmodel.commands.PanCommand;
@@ -1767,6 +2101,8 @@ import viewmodel.commands.UndoManager;
 import viewmodel.commands.ZoomCommand;
 import utils.CoordinateConverter;
 import utils.ComplexNumber;
+import model.Viewport; // Для DEFAULT_VIEWPORT
+
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
@@ -1785,19 +2121,26 @@ public class FractalViewModel {
     private FractalState currentState;
     private final PropertyChangeSupport support = new PropertyChangeSupport(this);
     private final UndoManager undoManager = new UndoManager(100);
-    private final FractalRenderer renderer;
+    private final FractalRenderer renderer; // Renderer теперь не используется напрямую для вызова render
+    // Константы для динамических итераций
+    private static final double DEFAULT_VIEWPORT_WIDTH = Viewport.DEFAULT_VIEWPORT.getWidth(); // Ширина viewport по умолчанию
+    private static final double ITERATION_ZOOM_FACTOR = 30.0; // Коэффициент масштабирования итераций (подбирается экспериментально)
+    private static final int MIN_ITERATIONS = 50; // Минимальное количество итераций
 
     /**
-     * Constructs the ViewModel with a default state and renderer.
+     * Constructs the ViewModel with a default state.
+     * The renderer is now primarily used by the View (FractalPanel),
+     * but might be needed here if ViewModel initiated rendering directly.
      *
-     * @param renderer The renderer to use for fractal generation.
+     * @param renderer The renderer (potentially unused here directly, but required by architecture).
      */
-    public FractalViewModel(FractalRenderer renderer) {
-        this.renderer = Objects.requireNonNull(renderer, "Renderer cannot be null");
+    public FractalViewModel(FractalRenderer renderer) { // Renderer может и не понадобиться здесь
+        this.renderer = Objects.requireNonNull(renderer, "Renderer cannot be null"); // Пока оставим
+        // Используем статический фабричный метод, который уже создает состояние с MandelbrotFunction
         this.currentState = FractalState.createDefault();
-        support.firePropertyChange(PROPERTY_STATE, null, this.currentState); // Начальное уведомление
-    }
-
+        // Уведомление о начальном состоянии не обязательно здесь, панель запросит рендер при показе
+        // support.firePropertyChange(PROPERTY_STATE, null, this.currentState);
+   }
     /**
      * Gets the current fractal state.
      *
@@ -1817,7 +2160,8 @@ public class FractalViewModel {
     }
 
     /**
-     * Loads a new FractalState, typically from a file, and clears the undo history.
+     * Loads a new FractalState, typically from a file, clears the undo history,
+     * and notifies listeners.
      *
      * @param newState The new state to set.
      */
@@ -1826,16 +2170,21 @@ public class FractalViewModel {
         FractalState oldState = this.currentState;
         boolean oldCanUndo = undoManager.canUndo();
 
-        this.currentState = newState;
-        undoManager.clearHistory();
+        this.currentState = newState; // Прямое обновление состояния
+        undoManager.clearHistory(); // Очистка истории для загруженного состояния
 
         support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
-        support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, false);
-        triggerRender();
+        // После очистки истории canUndo точно false (если только не было false до этого)
+        boolean newCanUndo = false; // undoManager.canUndo() вернет false
+        if (oldCanUndo != newCanUndo) {
+             support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
+        }
+        // Рендер запустит панель при получении события PROPERTY_STATE
     }
 
     /**
-     * Executes a command, updates the state, and adds it to the undo history.
+     * Executes a command, updates the state, adds it to the undo history,
+     * and notifies listeners.
      *
      * @param command The command to execute.
      */
@@ -1843,14 +2192,17 @@ public class FractalViewModel {
         FractalState oldState = this.currentState;
         boolean oldCanUndo = undoManager.canUndo();
 
+        // Команда сама обновит состояние через viewModel.updateStateFromCommand()
         if (command.execute()) {
             undoManager.addCommand(command);
+            // Состояние УЖЕ обновлено командой, теперь нужно оповестить слушателей
             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+
             boolean newCanUndo = undoManager.canUndo();
             if (oldCanUndo != newCanUndo) {
                 support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
             }
-            triggerRender();
+            // Рендер запустит панель при получении события PROPERTY_STATE
         }
     }
 
@@ -1899,54 +2251,68 @@ public class FractalViewModel {
     }
 
     /**
-     * Undoes the last executed command.
+     * Undoes the last executed command and notifies listeners.
      */
     public void undoLastAction() {
-        boolean oldCanUndo = undoManager.canUndo();
         FractalState oldState = this.currentState;
+        boolean oldCanUndo = undoManager.canUndo();
 
+        // undo() внутри себя вызовет viewModel.updateStateFromCommand()
         if (undoManager.undo()) {
-            support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
-            boolean newCanUndo = undoManager.canUndo();
-            if (oldCanUndo != newCanUndo) {
-                support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
-            }
-            triggerRender();
+             // Состояние УЖЕ обновлено через undo(), оповещаем слушателей
+             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+
+             boolean newCanUndo = undoManager.canUndo();
+             if (oldCanUndo != newCanUndo) {
+                 support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
+             }
+             // Рендер запустит панель при получении события PROPERTY_STATE
         }
     }
 
+
     /**
-     * Changes the current color scheme and triggers a re-render.
+     * Changes the current color scheme and notifies listeners.
+     * Does NOT add an undo step for simplicity, but could be refactored into a command.
      *
      * @param newScheme The new color scheme to apply.
      */
     public void changeColorScheme(ColorScheme newScheme) {
         Objects.requireNonNull(newScheme, "Color scheme cannot be null");
         FractalState oldState = this.currentState;
+        // Сравниваем классы, чтобы не обновлять, если схема того же типа уже установлена
         if (!oldState.getColorScheme().getClass().equals(newScheme.getClass())) {
+            // Используем with-метод для создания нового состояния
             this.currentState = oldState.withColorScheme(newScheme);
             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
-            triggerRender();
+             // Рендер запустит панель при получении события PROPERTY_STATE
         }
     }
 
+
     /**
-     * Changes the maximum number of iterations and triggers a re-render.
+     * Changes the maximum number of iterations and notifies listeners.
+     * Does NOT add an undo step for simplicity, but could be refactored into a command.
      *
      * @param newMaxIterations The new maximum iteration count (must be positive).
      */
     public void changeMaxIterations(int newMaxIterations) {
         if (newMaxIterations <= 0) {
             System.err.println("Max iterations must be positive.");
-            return;
+            return; // Или бросить исключение / показать диалог
         }
         FractalState oldState = this.currentState;
         if (oldState.getMaxIterations() != newMaxIterations) {
+             // Используем with-метод для создания нового состояния
             this.currentState = oldState.withMaxIterations(newMaxIterations);
             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
-            triggerRender();
+             // Рендер запустит панель при получении события PROPERTY_STATE
         }
     }
+
+    // public public void updateStateFromCommand(FractalState newState) {
+    //     this.currentState = newState;
+    // }
 
     /**
      * Triggers rendering of the current state using the FractalRenderer.
@@ -1977,13 +2343,21 @@ public class FractalViewModel {
     }
 
     /**
-     * Updates the current state from a command execution.
-     * Should only be called by Command implementations.
+     * Updates the current state from a command execution or load.
+     * Fires property change event.
      *
      * @param newState The new state to set.
+     * @param oldState The previous state (for event firing).
      */
-    public void updateStateFromCommand(FractalState newState) {
+    public void updateState(FractalState newState, FractalState oldState) {
+        Objects.requireNonNull(newState, "New state cannot be null");
         this.currentState = newState;
+        support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+        // Обновление canUndo должно происходить там, где меняется undoManager
+    }
+
+    public void updateStateFromCommand(FractalState nextState) {
+        this.currentState = nextState;
     }
 }
 
@@ -2228,123 +2602,151 @@ package viewmodel.commands;
 
 import model.FractalState;
 import model.Viewport;
-import viewmodel.FractalViewModel;
+import viewmodel.FractalViewModel; // Добавлен импорт для доступа к константам (если они там)
+                                  // Лучше передавать константы или использовать отдельный класс
 import java.util.Objects;
 
 /**
- * Команда для выполнения операции масштабирования (зума) области просмотра фрактала
- * к новому прямоугольному региону. Учитывает соотношение сторон для корректного отображения.
- * Изменяет {@link Viewport} в {@link FractalState}.
+ * Команда для выполнения операции масштабирования (зума).
+ * При выполнении также динамически изменяет максимальное количество итераций
+ * в зависимости от степени приближения.
  */
 public class ZoomCommand implements Command {
 
-    /** Ссылка на ViewModel для доступа к текущему состоянию и его обновления. */
     private final FractalViewModel viewModel;
-    /** Минимальная вещественная координата целевой области зума. */
     private final double targetMinX;
-    /** Максимальная вещественная координата целевой области зума. */
     private final double targetMaxX;
-    /** Минимальная мнимая координата целевой области зума. */
     private final double targetMinY;
-    /** Максимальная мнимая координата целевой области зума. */
     private final double targetMaxY;
-    /** Целевое соотношение сторон (ширина/высота), которое должен иметь новый Viewport. */
     private final double targetAspectRatio;
 
-    /** Предыдущее состояние Viewport до выполнения команды. Сохраняется для возможности отмены (Undo). */
+    // Поля для отмены
     private Viewport previousViewport;
-    /** Флаг, была ли команда выполнена. */
-    private boolean executed = false; // Добавлен флаг executed
+    private int previousMaxIterations; // <-- Добавлено поле для итераций
+    private boolean executed = false;
+
+    // Получаем константы (можно передать через конструктор или получить из ViewModel)
+    // Для простоты пока захардкодим здесь, но лучше вынести
+    private static final double DEFAULT_VIEWPORT_WIDTH = 3.0; // (-2.0, 1.0) -> width = 3.0
+    private static final double ITERATION_ZOOM_FACTOR = 40.0; // Экспериментальный коэффициент
+    private static final int MIN_ITERATIONS = 50;
 
     /**
      * Создает команду масштабирования.
-     * Координаты (x1, y1) и (x2, y2) задают диагональ целевого прямоугольника
-     * в координатах комплексной плоскости.
      *
      * @param viewModel         ViewModel, состояние которой будет изменяться.
      * @param x1                Одна из вещественных координат целевой области.
      * @param x2                Другая вещественная координата целевой области.
      * @param y1                Одна из мнимых координат целевой области.
      * @param y2                Другая мнимая координата целевой области.
-     * @param targetAspectRatio Желаемое соотношение сторон нового Viewport (обычно равно
-     *                          соотношению сторон панели отрисовки).
+     * @param targetAspectRatio Желаемое соотношение сторон нового Viewport.
      */
     public ZoomCommand(FractalViewModel viewModel, double x1, double x2, double y1, double y2, double targetAspectRatio) {
         this.viewModel = Objects.requireNonNull(viewModel, "ViewModel не может быть null");
-        // Определяем min/max координаты целевой области
         this.targetMinX = Math.min(x1, x2);
         this.targetMaxX = Math.max(x1, x2);
         this.targetMinY = Math.min(y1, y2);
         this.targetMaxY = Math.max(y1, y2);
         this.targetAspectRatio = targetAspectRatio;
-        this.previousViewport = null; // Инициализируем null, будет установлено при execute()
+        this.previousViewport = null;
+        this.previousMaxIterations = 0; // Инициализируем
     }
 
-    /**
-     * Выполняет масштабирование.
-     * Сохраняет текущий Viewport для возможности отмены.
-     * Вычисляет новый Viewport на основе целевых координат и соотношения сторон,
-     * используя метод {@link Viewport#zoom(double, double, double, double, double)}.
-     * Обновляет состояние в ViewModel.
-     *
-     * @return true, если масштабирование было выполнено и состояние изменилось, иначе false.
-     */
     @Override
     public boolean execute() {
-        // Команду можно выполнить только один раз перед отменой
         if (executed) {
             System.err.println("ZoomCommand: Попытка повторного выполнения команды.");
             return false;
         }
 
         FractalState currentState = viewModel.getCurrentState();
-        // Сохраняем текущий viewport перед изменением для возможности отмены
         this.previousViewport = currentState.getViewport();
+        this.previousMaxIterations = currentState.getMaxIterations(); // <-- Сохраняем итерации
 
-        // Вычисляем новый viewport с помощью метода zoom, который учтет соотношение сторон
+        // Вычисляем новый viewport
         Viewport newViewport = previousViewport.zoom(targetMinX, targetMaxX, targetMinY, targetMaxY, targetAspectRatio);
 
-        // Проверяем, изменился ли viewport реально (зум мог быть слишком мал или координаты совпадали)
         if (newViewport.equals(previousViewport)) {
             System.out.println("ZoomCommand: Viewport не изменился после зума.");
-            this.previousViewport = null; // Сбрасываем, так как состояние не изменилось
-            return false; // Состояние не изменилось
+            this.previousViewport = null;
+            this.previousMaxIterations = 0;
+            return false;
         }
 
-         // Создаем новое состояние с новым viewport
-        FractalState nextState = currentState.withViewport(newViewport);
-        // Обновляем состояние в ViewModel
+        // Вычисляем новое количество итераций
+        int newMaxIterations = calculateNewIterations(previousViewport, newViewport, previousMaxIterations);
+
+        // Создаем новое состояние с новым viewport И новыми итерациями
+        FractalState nextState = currentState
+            .withViewport(newViewport)
+            .withMaxIterations(newMaxIterations); // <-- Устанавливаем новые итерации
+
+        // Обновляем состояние в ViewModel (ViewModel сам вызовет оповещение)
         viewModel.updateStateFromCommand(nextState);
-        executed = true; // Помечаем как выполненную
-        System.out.println("ZoomCommand: Выполнено. Новый viewport: " + newViewport);
+        executed = true;
+        System.out.printf("ZoomCommand: Выполнено. Viewport: %s, Iterations: %d%n", newViewport, newMaxIterations);
+        return true;
+    }
+    
+
+    @Override
+    public boolean undo() {
+        if (!executed || previousViewport == null) {
+            System.err.println("ZoomCommand: Попытка отмены невыполненной или уже отмененной команды.");
+            return false;
+        }
+        FractalState currentState = viewModel.getCurrentState();
+
+        // Создаем восстановленное состояние с предыдущим viewport И предыдущими итерациями
+        FractalState restoredState = currentState
+            .withViewport(previousViewport)
+            .withMaxIterations(previousMaxIterations); // <-- Восстанавливаем итерации
+
+        viewModel.updateStateFromCommand(restoredState);
+
+        this.previousViewport = null;
+        this.previousMaxIterations = 0;
+        executed = false;
+        System.out.printf("ZoomCommand: Отменено. Viewport: %s, Iterations: %d%n",
+            restoredState.getViewport(), restoredState.getMaxIterations());
         return true;
     }
 
     /**
-     * Отменяет масштабирование.
-     * Восстанавливает {@code previousViewport}, сохраненный при выполнении команды,
-     * и обновляет состояние в ViewModel.
+     * Рассчитывает новое количество итераций на основе изменения масштаба.
      *
-     * @return true, если отмена была выполнена, иначе false (если команда не была выполнена или уже отменена).
+     * @param oldViewport      Предыдущий Viewport.
+     * @param newViewport      Новый Viewport.
+     * @param currentIterations Текущее количество итераций.
+     * @return Рассчитанное новое количество итераций.
      */
-    @Override
-    public boolean undo() {
-        // Отменить можно только выполненную команду, у которой сохранен previousViewport
-        if (!executed || previousViewport == null) {
-             System.err.println("ZoomCommand: Попытка отмены невыполненной или уже отмененной команды.");
-             return false;
-        }
-        FractalState currentState = viewModel.getCurrentState();
-        // Создаем восстановленное состояние с предыдущим viewport
-        FractalState restoredState = currentState.withViewport(previousViewport);
-        // Обновляем состояние в ViewModel
-        viewModel.updateStateFromCommand(restoredState);
+    private int calculateNewIterations(Viewport oldViewport, Viewport newViewport, int currentIterations) {
+         // Используем ширину для определения масштаба
+         double oldWidth = oldViewport.getWidth();
+         double newWidth = newViewport.getWidth();
 
-        // Очищаем previousViewport и сбрасываем флаг, т.к. отмена выполнена
-        this.previousViewport = null;
-        executed = false;
-        System.out.println("ZoomCommand: Отменено. Восстановлен viewport: " + restoredState.getViewport());
-        return true;
+         if (oldWidth <= 0 || newWidth <= 0) {
+             return currentIterations; // Избегаем деления на ноль или логарифма от некорректного значения
+         }
+
+         // Коэффициент масштабирования (во сколько раз уменьшилась ширина)
+         double zoomFactor = oldWidth / newWidth;
+
+         if (zoomFactor <= 0) {
+              return currentIterations; // Логарифм не определен для <= 0
+         }
+
+         // Простое логарифмическое увеличение.
+         // Math.log() - натуральный логарифм.
+         // Добавляем прирост к ТЕКУЩИМ итерациям, а не к базовым.
+         // Это позволяет итерациям накапливаться при последовательных зумах.
+         int deltaIterations = (int) (Math.log(zoomFactor) * ITERATION_ZOOM_FACTOR);
+
+         // Если deltaIterations отрицательный (отдаление), итерации могут уменьшиться
+         int calculatedIterations = currentIterations + deltaIterations;
+
+         // Ограничиваем минимальным значением
+         return Math.max(MIN_ITERATIONS, calculatedIterations);
     }
 }
 
@@ -2512,7 +2914,50 @@ public class FileService {
 
 // File: core/src/main/java/services/AnimationService.java
 
+// File: core/src/main/java/services/AnimationService.java
+package services;
 
+// Импорты могут понадобиться в будущем
+// import model.FractalState;
+// import java.io.File;
+// import java.util.List;
+
+/**
+ * Сервис для создания анимации "экскурсии по фракталу".
+ * Генерирует последовательность кадров (изображений или состояний)
+ * между ключевыми точками, заданными пользователем, и может сохранять
+ * результат в видеофайл (функциональность не реализована).
+ *
+ * <p>Текущая реализация является заглушкой.</p>
+ */
+public class AnimationService {
+
+    /**
+     * Конструктор по умолчанию.
+     */
+    public AnimationService() {
+        // Конструктор пока пуст
+        System.out.println("AnimationService initialized (Stub).");
+    }
+
+    /**
+     * Метод для генерации и сохранения анимации (не реализован).
+     *
+     * @param keyFrames Список ключевых состояний FractalState.
+     * @param frameRate Частота кадров в секунду.
+     * @param durationSeconds Продолжительность сегмента между кадрами.
+     * @param outputFile Файл для сохранения видео.
+     * @throws UnsupportedOperationException Всегда, так как функциональность не реализована.
+     */
+    public void createAndSaveAnimation(/*List<FractalState> keyFrames, int frameRate, double durationSeconds, File outputFile*/) {
+        // TODO: Реализовать логику интерполяции состояний (viewport, возможно итерации/цвета)
+        // TODO: Реализовать рендеринг каждого кадра
+        // TODO: Реализовать сборку кадров в видеофайл (используя внешние библиотеки, например, JCodec или Xuggler, что сложно)
+        throw new UnsupportedOperationException("Анимация еще не реализована.");
+    }
+
+    // Другие вспомогательные методы могут быть добавлены здесь
+}
 
 // File: core/src/main/java/render/TileCalculator.java
 
@@ -2605,6 +3050,8 @@ import model.FractalState;
 import model.Viewport;
 import utils.ComplexNumber;
 import utils.CoordinateConverter;
+import math.FractalFunction; // <-- Добавлен импорт
+
 
 import javax.swing.*;
 import java.awt.*;
@@ -2617,6 +3064,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import javax.swing.*; // Для SwingUtilities
+
+
 
 /**
  * Handles the multi-threaded rendering of the Mandelbrot fractal.

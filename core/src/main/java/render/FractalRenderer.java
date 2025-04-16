@@ -5,6 +5,8 @@ import model.FractalState;
 import model.Viewport;
 import utils.ComplexNumber;
 import utils.CoordinateConverter;
+import math.FractalFunction; // <-- Добавлен импорт
+
 
 import javax.swing.*;
 import java.awt.*;
@@ -17,6 +19,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import javax.swing.*; // Для SwingUtilities
+
+
 
 /**
  * Handles the multi-threaded rendering of the Mandelbrot fractal.

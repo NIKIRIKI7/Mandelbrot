@@ -3,122 +3,150 @@ package viewmodel.commands;
 
 import model.FractalState;
 import model.Viewport;
-import viewmodel.FractalViewModel;
+import viewmodel.FractalViewModel; // Добавлен импорт для доступа к константам (если они там)
+                                  // Лучше передавать константы или использовать отдельный класс
 import java.util.Objects;
 
 /**
- * Команда для выполнения операции масштабирования (зума) области просмотра фрактала
- * к новому прямоугольному региону. Учитывает соотношение сторон для корректного отображения.
- * Изменяет {@link Viewport} в {@link FractalState}.
+ * Команда для выполнения операции масштабирования (зума).
+ * При выполнении также динамически изменяет максимальное количество итераций
+ * в зависимости от степени приближения.
  */
 public class ZoomCommand implements Command {
 
-    /** Ссылка на ViewModel для доступа к текущему состоянию и его обновления. */
     private final FractalViewModel viewModel;
-    /** Минимальная вещественная координата целевой области зума. */
     private final double targetMinX;
-    /** Максимальная вещественная координата целевой области зума. */
     private final double targetMaxX;
-    /** Минимальная мнимая координата целевой области зума. */
     private final double targetMinY;
-    /** Максимальная мнимая координата целевой области зума. */
     private final double targetMaxY;
-    /** Целевое соотношение сторон (ширина/высота), которое должен иметь новый Viewport. */
     private final double targetAspectRatio;
 
-    /** Предыдущее состояние Viewport до выполнения команды. Сохраняется для возможности отмены (Undo). */
+    // Поля для отмены
     private Viewport previousViewport;
-    /** Флаг, была ли команда выполнена. */
-    private boolean executed = false; // Добавлен флаг executed
+    private int previousMaxIterations; // <-- Добавлено поле для итераций
+    private boolean executed = false;
+
+    // Получаем константы (можно передать через конструктор или получить из ViewModel)
+    // Для простоты пока захардкодим здесь, но лучше вынести
+    private static final double DEFAULT_VIEWPORT_WIDTH = 3.0; // (-2.0, 1.0) -> width = 3.0
+    private static final double ITERATION_ZOOM_FACTOR = 40.0; // Экспериментальный коэффициент
+    private static final int MIN_ITERATIONS = 50;
 
     /**
      * Создает команду масштабирования.
-     * Координаты (x1, y1) и (x2, y2) задают диагональ целевого прямоугольника
-     * в координатах комплексной плоскости.
      *
      * @param viewModel         ViewModel, состояние которой будет изменяться.
      * @param x1                Одна из вещественных координат целевой области.
      * @param x2                Другая вещественная координата целевой области.
      * @param y1                Одна из мнимых координат целевой области.
      * @param y2                Другая мнимая координата целевой области.
-     * @param targetAspectRatio Желаемое соотношение сторон нового Viewport (обычно равно
-     *                          соотношению сторон панели отрисовки).
+     * @param targetAspectRatio Желаемое соотношение сторон нового Viewport.
      */
     public ZoomCommand(FractalViewModel viewModel, double x1, double x2, double y1, double y2, double targetAspectRatio) {
         this.viewModel = Objects.requireNonNull(viewModel, "ViewModel не может быть null");
-        // Определяем min/max координаты целевой области
         this.targetMinX = Math.min(x1, x2);
         this.targetMaxX = Math.max(x1, x2);
         this.targetMinY = Math.min(y1, y2);
         this.targetMaxY = Math.max(y1, y2);
         this.targetAspectRatio = targetAspectRatio;
-        this.previousViewport = null; // Инициализируем null, будет установлено при execute()
+        this.previousViewport = null;
+        this.previousMaxIterations = 0; // Инициализируем
     }
 
-    /**
-     * Выполняет масштабирование.
-     * Сохраняет текущий Viewport для возможности отмены.
-     * Вычисляет новый Viewport на основе целевых координат и соотношения сторон,
-     * используя метод {@link Viewport#zoom(double, double, double, double, double)}.
-     * Обновляет состояние в ViewModel.
-     *
-     * @return true, если масштабирование было выполнено и состояние изменилось, иначе false.
-     */
     @Override
     public boolean execute() {
-        // Команду можно выполнить только один раз перед отменой
         if (executed) {
             System.err.println("ZoomCommand: Попытка повторного выполнения команды.");
             return false;
         }
 
         FractalState currentState = viewModel.getCurrentState();
-        // Сохраняем текущий viewport перед изменением для возможности отмены
         this.previousViewport = currentState.getViewport();
+        this.previousMaxIterations = currentState.getMaxIterations(); // <-- Сохраняем итерации
 
-        // Вычисляем новый viewport с помощью метода zoom, который учтет соотношение сторон
+        // Вычисляем новый viewport
         Viewport newViewport = previousViewport.zoom(targetMinX, targetMaxX, targetMinY, targetMaxY, targetAspectRatio);
 
-        // Проверяем, изменился ли viewport реально (зум мог быть слишком мал или координаты совпадали)
         if (newViewport.equals(previousViewport)) {
             System.out.println("ZoomCommand: Viewport не изменился после зума.");
-            this.previousViewport = null; // Сбрасываем, так как состояние не изменилось
-            return false; // Состояние не изменилось
+            this.previousViewport = null;
+            this.previousMaxIterations = 0;
+            return false;
         }
 
-         // Создаем новое состояние с новым viewport
-        FractalState nextState = currentState.withViewport(newViewport);
-        // Обновляем состояние в ViewModel
+        // Вычисляем новое количество итераций
+        int newMaxIterations = calculateNewIterations(previousViewport, newViewport, previousMaxIterations);
+
+        // Создаем новое состояние с новым viewport И новыми итерациями
+        FractalState nextState = currentState
+            .withViewport(newViewport)
+            .withMaxIterations(newMaxIterations); // <-- Устанавливаем новые итерации
+
+        // Обновляем состояние в ViewModel (ViewModel сам вызовет оповещение)
         viewModel.updateStateFromCommand(nextState);
-        executed = true; // Помечаем как выполненную
-        System.out.println("ZoomCommand: Выполнено. Новый viewport: " + newViewport);
+        executed = true;
+        System.out.printf("ZoomCommand: Выполнено. Viewport: %s, Iterations: %d%n", newViewport, newMaxIterations);
+        return true;
+    }
+    
+
+    @Override
+    public boolean undo() {
+        if (!executed || previousViewport == null) {
+            System.err.println("ZoomCommand: Попытка отмены невыполненной или уже отмененной команды.");
+            return false;
+        }
+        FractalState currentState = viewModel.getCurrentState();
+
+        // Создаем восстановленное состояние с предыдущим viewport И предыдущими итерациями
+        FractalState restoredState = currentState
+            .withViewport(previousViewport)
+            .withMaxIterations(previousMaxIterations); // <-- Восстанавливаем итерации
+
+        viewModel.updateStateFromCommand(restoredState);
+
+        this.previousViewport = null;
+        this.previousMaxIterations = 0;
+        executed = false;
+        System.out.printf("ZoomCommand: Отменено. Viewport: %s, Iterations: %d%n",
+            restoredState.getViewport(), restoredState.getMaxIterations());
         return true;
     }
 
     /**
-     * Отменяет масштабирование.
-     * Восстанавливает {@code previousViewport}, сохраненный при выполнении команды,
-     * и обновляет состояние в ViewModel.
+     * Рассчитывает новое количество итераций на основе изменения масштаба.
      *
-     * @return true, если отмена была выполнена, иначе false (если команда не была выполнена или уже отменена).
+     * @param oldViewport      Предыдущий Viewport.
+     * @param newViewport      Новый Viewport.
+     * @param currentIterations Текущее количество итераций.
+     * @return Рассчитанное новое количество итераций.
      */
-    @Override
-    public boolean undo() {
-        // Отменить можно только выполненную команду, у которой сохранен previousViewport
-        if (!executed || previousViewport == null) {
-             System.err.println("ZoomCommand: Попытка отмены невыполненной или уже отмененной команды.");
-             return false;
-        }
-        FractalState currentState = viewModel.getCurrentState();
-        // Создаем восстановленное состояние с предыдущим viewport
-        FractalState restoredState = currentState.withViewport(previousViewport);
-        // Обновляем состояние в ViewModel
-        viewModel.updateStateFromCommand(restoredState);
+    private int calculateNewIterations(Viewport oldViewport, Viewport newViewport, int currentIterations) {
+         // Используем ширину для определения масштаба
+         double oldWidth = oldViewport.getWidth();
+         double newWidth = newViewport.getWidth();
 
-        // Очищаем previousViewport и сбрасываем флаг, т.к. отмена выполнена
-        this.previousViewport = null;
-        executed = false;
-        System.out.println("ZoomCommand: Отменено. Восстановлен viewport: " + restoredState.getViewport());
-        return true;
+         if (oldWidth <= 0 || newWidth <= 0) {
+             return currentIterations; // Избегаем деления на ноль или логарифма от некорректного значения
+         }
+
+         // Коэффициент масштабирования (во сколько раз уменьшилась ширина)
+         double zoomFactor = oldWidth / newWidth;
+
+         if (zoomFactor <= 0) {
+              return currentIterations; // Логарифм не определен для <= 0
+         }
+
+         // Простое логарифмическое увеличение.
+         // Math.log() - натуральный логарифм.
+         // Добавляем прирост к ТЕКУЩИМ итерациям, а не к базовым.
+         // Это позволяет итерациям накапливаться при последовательных зумах.
+         int deltaIterations = (int) (Math.log(zoomFactor) * ITERATION_ZOOM_FACTOR);
+
+         // Если deltaIterations отрицательный (отдаление), итерации могут уменьшиться
+         int calculatedIterations = currentIterations + deltaIterations;
+
+         // Ограничиваем минимальным значением
+         return Math.max(MIN_ITERATIONS, calculatedIterations);
     }
 }

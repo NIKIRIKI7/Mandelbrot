@@ -2,7 +2,6 @@ package viewmodel;
 
 import model.ColorScheme;
 import model.FractalState;
-import model.Viewport;
 import render.FractalRenderer;
 import viewmodel.commands.Command;
 import viewmodel.commands.PanCommand;
@@ -10,6 +9,8 @@ import viewmodel.commands.UndoManager;
 import viewmodel.commands.ZoomCommand;
 import utils.CoordinateConverter;
 import utils.ComplexNumber;
+import model.Viewport; // Для DEFAULT_VIEWPORT
+
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
@@ -28,19 +29,26 @@ public class FractalViewModel {
     private FractalState currentState;
     private final PropertyChangeSupport support = new PropertyChangeSupport(this);
     private final UndoManager undoManager = new UndoManager(100);
-    private final FractalRenderer renderer;
+    private final FractalRenderer renderer; // Renderer теперь не используется напрямую для вызова render
+    // Константы для динамических итераций
+    private static final double DEFAULT_VIEWPORT_WIDTH = Viewport.DEFAULT_VIEWPORT.getWidth(); // Ширина viewport по умолчанию
+    private static final double ITERATION_ZOOM_FACTOR = 30.0; // Коэффициент масштабирования итераций (подбирается экспериментально)
+    private static final int MIN_ITERATIONS = 50; // Минимальное количество итераций
 
     /**
-     * Constructs the ViewModel with a default state and renderer.
+     * Constructs the ViewModel with a default state.
+     * The renderer is now primarily used by the View (FractalPanel),
+     * but might be needed here if ViewModel initiated rendering directly.
      *
-     * @param renderer The renderer to use for fractal generation.
+     * @param renderer The renderer (potentially unused here directly, but required by architecture).
      */
-    public FractalViewModel(FractalRenderer renderer) {
-        this.renderer = Objects.requireNonNull(renderer, "Renderer cannot be null");
+    public FractalViewModel(FractalRenderer renderer) { // Renderer может и не понадобиться здесь
+        this.renderer = Objects.requireNonNull(renderer, "Renderer cannot be null"); // Пока оставим
+        // Используем статический фабричный метод, который уже создает состояние с MandelbrotFunction
         this.currentState = FractalState.createDefault();
-        support.firePropertyChange(PROPERTY_STATE, null, this.currentState); // Начальное уведомление
-    }
-
+        // Уведомление о начальном состоянии не обязательно здесь, панель запросит рендер при показе
+        // support.firePropertyChange(PROPERTY_STATE, null, this.currentState);
+   }
     /**
      * Gets the current fractal state.
      *
@@ -60,7 +68,8 @@ public class FractalViewModel {
     }
 
     /**
-     * Loads a new FractalState, typically from a file, and clears the undo history.
+     * Loads a new FractalState, typically from a file, clears the undo history,
+     * and notifies listeners.
      *
      * @param newState The new state to set.
      */
@@ -69,16 +78,21 @@ public class FractalViewModel {
         FractalState oldState = this.currentState;
         boolean oldCanUndo = undoManager.canUndo();
 
-        this.currentState = newState;
-        undoManager.clearHistory();
+        this.currentState = newState; // Прямое обновление состояния
+        undoManager.clearHistory(); // Очистка истории для загруженного состояния
 
         support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
-        support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, false);
-        triggerRender();
+        // После очистки истории canUndo точно false (если только не было false до этого)
+        boolean newCanUndo = false; // undoManager.canUndo() вернет false
+        if (oldCanUndo != newCanUndo) {
+             support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
+        }
+        // Рендер запустит панель при получении события PROPERTY_STATE
     }
 
     /**
-     * Executes a command, updates the state, and adds it to the undo history.
+     * Executes a command, updates the state, adds it to the undo history,
+     * and notifies listeners.
      *
      * @param command The command to execute.
      */
@@ -86,14 +100,17 @@ public class FractalViewModel {
         FractalState oldState = this.currentState;
         boolean oldCanUndo = undoManager.canUndo();
 
+        // Команда сама обновит состояние через viewModel.updateStateFromCommand()
         if (command.execute()) {
             undoManager.addCommand(command);
+            // Состояние УЖЕ обновлено командой, теперь нужно оповестить слушателей
             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+
             boolean newCanUndo = undoManager.canUndo();
             if (oldCanUndo != newCanUndo) {
                 support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
             }
-            triggerRender();
+            // Рендер запустит панель при получении события PROPERTY_STATE
         }
     }
 
@@ -142,54 +159,68 @@ public class FractalViewModel {
     }
 
     /**
-     * Undoes the last executed command.
+     * Undoes the last executed command and notifies listeners.
      */
     public void undoLastAction() {
-        boolean oldCanUndo = undoManager.canUndo();
         FractalState oldState = this.currentState;
+        boolean oldCanUndo = undoManager.canUndo();
 
+        // undo() внутри себя вызовет viewModel.updateStateFromCommand()
         if (undoManager.undo()) {
-            support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
-            boolean newCanUndo = undoManager.canUndo();
-            if (oldCanUndo != newCanUndo) {
-                support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
-            }
-            triggerRender();
+             // Состояние УЖЕ обновлено через undo(), оповещаем слушателей
+             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+
+             boolean newCanUndo = undoManager.canUndo();
+             if (oldCanUndo != newCanUndo) {
+                 support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
+             }
+             // Рендер запустит панель при получении события PROPERTY_STATE
         }
     }
 
+
     /**
-     * Changes the current color scheme and triggers a re-render.
+     * Changes the current color scheme and notifies listeners.
+     * Does NOT add an undo step for simplicity, but could be refactored into a command.
      *
      * @param newScheme The new color scheme to apply.
      */
     public void changeColorScheme(ColorScheme newScheme) {
         Objects.requireNonNull(newScheme, "Color scheme cannot be null");
         FractalState oldState = this.currentState;
+        // Сравниваем классы, чтобы не обновлять, если схема того же типа уже установлена
         if (!oldState.getColorScheme().getClass().equals(newScheme.getClass())) {
+            // Используем with-метод для создания нового состояния
             this.currentState = oldState.withColorScheme(newScheme);
             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
-            triggerRender();
+             // Рендер запустит панель при получении события PROPERTY_STATE
         }
     }
 
+
     /**
-     * Changes the maximum number of iterations and triggers a re-render.
+     * Changes the maximum number of iterations and notifies listeners.
+     * Does NOT add an undo step for simplicity, but could be refactored into a command.
      *
      * @param newMaxIterations The new maximum iteration count (must be positive).
      */
     public void changeMaxIterations(int newMaxIterations) {
         if (newMaxIterations <= 0) {
             System.err.println("Max iterations must be positive.");
-            return;
+            return; // Или бросить исключение / показать диалог
         }
         FractalState oldState = this.currentState;
         if (oldState.getMaxIterations() != newMaxIterations) {
+             // Используем with-метод для создания нового состояния
             this.currentState = oldState.withMaxIterations(newMaxIterations);
             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
-            triggerRender();
+             // Рендер запустит панель при получении события PROPERTY_STATE
         }
     }
+
+    // public public void updateStateFromCommand(FractalState newState) {
+    //     this.currentState = newState;
+    // }
 
     /**
      * Triggers rendering of the current state using the FractalRenderer.
@@ -220,12 +251,20 @@ public class FractalViewModel {
     }
 
     /**
-     * Updates the current state from a command execution.
-     * Should only be called by Command implementations.
+     * Updates the current state from a command execution or load.
+     * Fires property change event.
      *
      * @param newState The new state to set.
+     * @param oldState The previous state (for event firing).
      */
-    public void updateStateFromCommand(FractalState newState) {
+    public void updateState(FractalState newState, FractalState oldState) {
+        Objects.requireNonNull(newState, "New state cannot be null");
         this.currentState = newState;
+        support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+        // Обновление canUndo должно происходить там, где меняется undoManager
+    }
+
+    public void updateStateFromCommand(FractalState nextState) {
+        this.currentState = nextState;
     }
 }
