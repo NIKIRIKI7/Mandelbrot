@@ -10,35 +10,58 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
 /**
- * The main application window for the Mandelbrot Set Explorer.
+ * Главное окно приложения "Mandelbrot Set Explorer".
+ * Содержит основную панель для отрисовки фрактала ({@link FractalPanel})
+ * и главное меню ({@link MenuBar}). Инициализирует ключевые компоненты
+ * архитектуры: {@link FractalViewModel}, {@link FractalRenderer}, {@link FileService}.
+ * Обрабатывает событие закрытия окна для корректного завершения работы.
  */
 public class MainFrame extends JFrame {
 
+    /** ViewModel, управляющая состоянием фрактала Мандельброта. */
     private final FractalViewModel viewModel;
+    /** Рендерер, отвечающий за вычисление и отрисовку фрактала. */
     private final FractalRenderer renderer;
+    /** Сервис для операций с файлами (сохранение/загрузка состояния и изображений). */
     private final FileService fileService;
+    /** Панель, отображающая фрактал и обрабатывающая ввод пользователя. */
     private final FractalPanel fractalPanel;
 
     /**
-     * Constructs the main application frame.
+     * Конструирует главное окно приложения.
+     * Инициализирует ViewModel, Renderer, FileService, FractalPanel и MenuBar.
+     * Настраивает основные параметры окна (заголовок, операция закрытия по умолчанию,
+     * расположение) и добавляет слушатель для обработки закрытия окна.
      */
     public MainFrame() {
+        // Инициализация основных компонентов
         renderer = new FractalRenderer();
-        viewModel = new FractalViewModel(renderer);
+        viewModel = new FractalViewModel(renderer); // ViewModel для Мандельброта
         fileService = new FileService();
 
+        // Настройка окна
         setTitle("Mandelbrot Set Explorer");
+        // Устанавливаем DO_NOTHING_ON_CLOSE, чтобы обработать закрытие в windowClosing
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        setLocationRelativeTo(null);
+        setLocationRelativeTo(null); // Центрировать окно на экране
 
-        fractalPanel = new FractalPanel(viewModel, renderer);
+        // Создание и настройка компонентов GUI
+        fractalPanel = new FractalPanel(viewModel, renderer); // Панель для Мандельброта
         MenuBar menuBar = new MenuBar(viewModel, fileService, fractalPanel, this);
 
+        // Сборка интерфейса
         setJMenuBar(menuBar);
-        add(fractalPanel, BorderLayout.CENTER);
-        pack();
+        add(fractalPanel, BorderLayout.CENTER); // Добавляем панель в центр окна
+        pack(); // Устанавливает размер окна на основе предпочтительных размеров компонентов
 
+        // Добавляем слушатель для обработки события закрытия окна
         addWindowListener(new WindowAdapter() {
+            /**
+             * Вызывается, когда пользователь пытается закрыть окно (нажимает крестик).
+             * Вызывает метод {@link #handleWindowClose()} для подтверждения
+             * и корректного завершения работы.
+             * @param e Событие окна.
+             */
             @Override
             public void windowClosing(WindowEvent e) {
                 handleWindowClose();
@@ -47,39 +70,56 @@ public class MainFrame extends JFrame {
     }
 
     /**
-     * Handles window closing with a confirmation dialog.
+     * Обрабатывает попытку закрытия главного окна.
+     * Показывает диалог подтверждения. Если пользователь подтверждает выход,
+     * останавливает потоки рендерера, освобождает ресурсы окна и завершает приложение.
      */
     private void handleWindowClose() {
+        // Показываем диалог подтверждения
         int confirmation = JOptionPane.showConfirmDialog(
-                this, "Are you sure you want to exit?", "Confirm Exit",
-                JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+                this, // Родительский компонент для диалога
+                "Are you sure you want to exit?", // Сообщение
+                "Confirm Exit", // Заголовок диалога
+                JOptionPane.YES_NO_OPTION, // Кнопки Да/Нет
+                JOptionPane.QUESTION_MESSAGE // Иконка вопроса
+        );
 
+        // Если пользователь нажал "Да"
         if (confirmation == JOptionPane.YES_OPTION) {
             System.out.println("Shutting down renderer...");
+            // Корректно останавливаем ExecutorService рендерера
             renderer.shutdown();
             System.out.println("Exiting application.");
+            // Освобождаем ресурсы окна
             dispose();
+            // Завершаем работу JVM
             System.exit(0);
         }
+        // Если пользователь нажал "Нет", ничего не делаем, окно остается открытым
     }
 
     /**
-     * Main entry point for the application.
+     * Главный метод, точка входа в приложение.
+     * Устанавливает системный Look and Feel для нативного вида интерфейса
+     * и запускает создание и отображение главного окна в потоке
+     * диспетчеризации событий Swing (EDT).
      *
-     * @param args Command line arguments (unused).
+     * @param args Аргументы командной строки (не используются).
      */
     public static void main(String[] args) {
-        // Set the system look and feel for a native appearance
+        // Попытка установить системный стиль интерфейса для лучшего внешнего вида
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {
-            System.err.println("Couldn't set system look and feel.");
+            // В случае ошибки просто выводим сообщение, приложение продолжит работу со стилем по умолчанию
+            System.err.println("Couldn't set system look and feel: " + e.getMessage());
         }
 
-        // Launch the application on the Event Dispatch Thread (EDT)
+        // Запускаем создание и отображение GUI в потоке диспетчеризации событий (EDT)
+        // Это стандартная практика для работы со Swing для обеспечения потокобезопасности
         SwingUtilities.invokeLater(() -> {
             MainFrame frame = new MainFrame();
-            frame.setVisible(true);
+            frame.setVisible(true); // Делаем окно видимым
         });
     }
 }

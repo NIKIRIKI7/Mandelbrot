@@ -25,6 +25,16 @@
 
         <!-- The UI should ideally not depend directly on the converter -->
         <!-- Test dependencies are inherited if needed, add specific UI test frameworks here -->
+        <dependency>
+            <groupId>org.jcodec</groupId>
+            <artifactId>jcodec-javase</artifactId>
+            <version>0.2.5</version> <!-- Используйте актуальную версию -->
+        </dependency>
+         <dependency>
+             <groupId>org.jcodec</groupId>
+             <artifactId>jcodec</artifactId>
+             <version>0.2.5</version> <!-- Та же версия, что и jcodec-javase -->
+         </dependency>
 
     </dependencies>
 

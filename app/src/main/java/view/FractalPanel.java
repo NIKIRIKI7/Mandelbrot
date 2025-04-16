@@ -14,109 +14,137 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
-import java.awt.event.MouseAdapter; // <-- Импорт для листенера
-import java.awt.event.MouseEvent;  // <-- Импорт для листенера
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 
 /**
- * JPanel responsible for displaying the rendered fractal image.
- * Listens to ViewModel updates and handles mouse interactions (zoom, pan, Julia set invocation).
+ * Компонент JPanel, отвечающий за отображение отрисованного изображения фрактала.
+ * Слушает обновления от {@link FractalViewModel}, обрабатывает взаимодействия с мышью
+ * (масштабирование выделением, панорамирование, вызов окна множества Жюлиа по двойному клику)
+ * и управляет процессом рендеринга через {@link FractalRenderer}.
+ * Реализует {@link PropertyChangeListener} для реакции на изменения состояния модели.
  */
 public class FractalPanel extends JPanel implements PropertyChangeListener {
 
+    /** ViewModel приложения, управляющая состоянием фрактала. */
     private final FractalViewModel viewModel;
+    /**
+     * Изображение фрактала. Используется {@code volatile} для обеспечения видимости
+     * между потоком рендеринга и потоком диспетчеризации событий (EDT).
+     */
     private volatile BufferedImage fractalImage;
+    /** Рендерер, выполняющий вычисления и отрисовку фрактала в отдельном потоке. */
     private final FractalRenderer renderer;
+    /** Слушатель для обработки масштабирования (зума) выделением области левой кнопкой мыши. */
     private final MouseZoomListener zoomListener;
+    /** Слушатель для обработки панорамирования (перетаскивания) правой кнопкой мыши. */
     private final MousePanListener panListener;
+    /**
+     * Флаг, указывающий, идет ли процесс рендеринга в данный момент.
+     * Используется {@code volatile} для потокобезопасного доступа из EDT и потока рендеринга.
+     */
     private volatile boolean isRendering = false;
+    /**
+     * Статусное сообщение, отображаемое на панели (например, "Rendering...", "Ready.", координаты).
+     * Используется {@code volatile} для потокобезопасного доступа.
+     */
     private volatile String statusMessage = "Initializing...";
 
     /**
-     * Constructs the FractalPanel with a ViewModel and Renderer.
-     * Initializes mouse listeners for zooming, panning, and opening Julia Set window on double-click.
-     * Listens for component resize/show events and ViewModel state changes to trigger rendering.
+     * Конструирует FractalPanel.
+     * Инициализирует слушателей мыши для масштабирования, панорамирования и открытия окна множества Жюлиа.
+     * Добавляет слушателей для событий изменения размера/видимости компонента и изменений состояния ViewModel
+     * для запуска рендеринга.
      *
-     * @param viewModel The application's ViewModel.
-     * @param renderer  The fractal renderer.
+     * @param viewModel ViewModel приложения. Не может быть null.
+     * @param renderer  Рендерер фрактала. Не может быть null.
      */
     public FractalPanel(FractalViewModel viewModel, FractalRenderer renderer) {
         this.viewModel = viewModel;
         this.renderer = renderer;
-        this.fractalImage = null;
+        this.fractalImage = null; // Изображение изначально отсутствует
 
+        // Подписываемся на изменения в ViewModel
         this.viewModel.addPropertyChangeListener(this);
-        setBackground(Color.BLACK);
-        setOpaque(true);
+        setBackground(Color.BLACK); // Цвет фона по умолчанию
+        setOpaque(true); // Компонент непрозрачный
 
-        // Инициализация слушателей
+        // Инициализация слушателей мыши
         zoomListener = new MouseZoomListener(viewModel, this);
         panListener = new MousePanListener(viewModel, this);
 
-        // Добавление слушателей событий мыши
-        addMouseListener(zoomListener);
-        addMouseMotionListener(zoomListener);
-        // ИЗМЕНЕНО: Удалена строка addMouseWheelListener(zoomListener),
-        // так как MouseZoomListener не реализует MouseWheelListener в предоставленной версии.
-        // Если зум колесом нужен, MouseZoomListener должен быть доработан и строка возвращена.
-        // addMouseWheelListener(zoomListener);
-        addMouseListener(panListener);
-        addMouseMotionListener(panListener);
+        // Добавление слушателей событий мыши к панели
+        addMouseListener(zoomListener);       // Нажатие/отпускание для зума
+        addMouseMotionListener(zoomListener); // Перетаскивание для зума
+        addMouseListener(panListener);       // Нажатие/отпускание для панорамирования
+        addMouseMotionListener(panListener); // Перетаскивание для панорамирования
 
-        // Слушатель изменения размера и видимости компонента
+        // Слушатель для отслеживания изменения размера и момента первого отображения панели
         addComponentListener(new ComponentAdapter() {
+            /**
+             * Вызывается при изменении размера панели. Запускает рендеринг,
+             * если панель видима и имеет корректные размеры.
+             * @param e Событие изменения компонента.
+             */
             @Override
             public void componentResized(ComponentEvent e) {
-                 // Рендерим только если панель видима и имеет корректные размеры
                  if (isShowing() && getWidth() > 0 && getHeight() > 0) {
-                    System.out.println("Panel resized. Triggering render.");
-                    triggerRender();
+                    System.out.println("Panel resized ("+ getWidth() + "x" + getHeight() +"). Triggering render.");
+                    triggerRender(); // Запускаем перерисовку при изменении размера
                 }
             }
 
-            // Также триггерим рендер при первом показе панели (после изменения размера)
+            /**
+             * Вызывается, когда панель становится видимой. Запускает рендеринг,
+             * если панель имеет корректные размеры. Важно для инициализации
+             * после того, как компоновщик определил размеры.
+             * @param e Событие изменения компонента.
+             */
             @Override
             public void componentShown(ComponentEvent e) {
                  if (getWidth() > 0 && getHeight() > 0) {
-                   System.out.println("Panel shown. Triggering render.");
-                   triggerRender();
+                   System.out.println("Panel shown ("+ getWidth() + "x" + getHeight() +"). Triggering render.");
+                   triggerRender(); // Запускаем перерисовку при первом отображении
                }
             }
        });
 
-       // --- Добавляем слушатель для окна Жюлиа по двойному клику ---
-       /**
-        * Mouse listener to detect double-clicks and open the corresponding Julia Set window.
-        */
+       // Слушатель для обработки двойного клика левой кнопкой мыши для открытия окна Жюлиа
        addMouseListener(new MouseAdapter() {
+            /**
+             * Вызывается при клике мыши. Проверяет двойной клик левой кнопкой
+             * и вызывает {@link #openJuliaSetWindow(Point)} для открытия
+             * соответствующего окна множества Жюлиа.
+             * @param e Событие мыши.
+             */
             @Override
             public void mouseClicked(MouseEvent e) {
-                // Проверяем двойной клик левой кнопкой мыши
+                // Проверяем двойной клик левой кнопкой
                 if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
                     System.out.println("Double-click detected at: " + e.getPoint());
-                    openJuliaSetWindow(e.getPoint());
+                    openJuliaSetWindow(e.getPoint()); // Открываем окно Жюлиа
                 }
             }
         });
-       // -------------------------------------------------------------
     }
 
     /**
-     * Opens the Julia Set window corresponding to the complex number
-     * at the clicked screen coordinates.
-     * Retrieves current color scheme and iteration count from the ViewModel
-     * to initialize the Julia Set view.
+     * Открывает окно для отображения множества Жюлиа, соответствующего комплексной
+     * координате 'c', которая соответствует точке {@code screenPoint} на панели.
+     * Получает текущую цветовую схему и количество итераций из {@link FractalViewModel}
+     * для инициализации вида множества Жюлиа.
      *
-     * @param screenPoint The Point on the panel where the double-click occurred.
+     * @param screenPoint Точка на панели (в экранных координатах), где произошел двойной клик.
      */
     private void openJuliaSetWindow(Point screenPoint) {
         int w = getWidth();
         int h = getHeight();
-        FractalState currentState = viewModel.getCurrentState(); // Get current state
+        FractalState currentState = viewModel.getCurrentState(); // Получаем текущее состояние
 
-        // Basic validation
+        // Проверка валидности размеров панели и состояния
         if (w <= 0 || h <= 0 || currentState == null) {
             System.err.println("Cannot open Julia Set: Panel size or state invalid.");
             JOptionPane.showMessageDialog(this,
@@ -125,11 +153,12 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
             return;
         }
 
-        // Convert screen coordinates to complex number 'c'
+        // Преобразуем экранные координаты клика в комплексное число 'c'
         ComplexNumber c = CoordinateConverter.screenToComplex(
             screenPoint.x, screenPoint.y, w, h, currentState.getViewport()
         );
 
+        // Проверка успешности конвертации
         if (c == null) {
             System.err.println("Cannot open Julia Set: Failed to convert screen coordinates.");
              JOptionPane.showMessageDialog(this,
@@ -138,52 +167,54 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
             return;
         }
 
-        // Get current settings to pass to the Julia window
+        // Получаем текущие настройки для передачи в окно Жюлиа
         ColorScheme currentScheme = currentState.getColorScheme();
         int currentIterations = currentState.getMaxIterations();
 
-        // Find the parent JFrame
+        // Находим родительское окно JFrame для позиционирования окна Жюлиа
         JFrame owner = (JFrame) SwingUtilities.getWindowAncestor(this);
         if (owner == null) {
              System.err.println("Cannot determine owner frame for Julia Set window. It will be centered on screen.");
-             // ИЗМЕНЕНО: Устанавливаем owner в null вместо создания нового JFrame.
-             // setLocationRelativeTo(null) корректно обработает этот случай.
+             // Если родительское окно не найдено, окно Жюлиа будет центрировано на экране (setLocationRelativeTo(null))
              owner = null;
         }
 
-        // Create and display the Julia window on the Event Dispatch Thread
-        final JFrame finalOwner = owner; // Final variable for use in lambda
+        // Создаем и отображаем окно Жюлиа в потоке диспетчеризации событий (EDT)
+        // Используем final переменную для лямбда-выражения
+        final JFrame finalOwner = owner;
         SwingUtilities.invokeLater(() -> {
             JuliaSetWindow juliaWindow = new JuliaSetWindow(finalOwner, c, currentScheme, currentIterations);
-            juliaWindow.display(); // Show the window
+            juliaWindow.display(); // Показываем окно
         });
     }
 
 
     /**
-     * Triggers asynchronous rendering of the fractal based on the current ViewModel state
-     * and the panel's current dimensions. Cancels any ongoing render task first.
-     * Updates the status message and requests a repaint to show the loading indicator.
+     * Инициирует асинхронный процесс рендеринга фрактала.
+     * Использует текущее состояние {@link FractalViewModel} и текущие размеры панели.
+     * Отменяет любой предыдущий незавершенный процесс рендеринга перед запуском нового.
+     * Обновляет статусное сообщение и запрашивает перерисовку панели для отображения индикатора загрузки.
      */
     public void triggerRender() {
         int width = getWidth();
         int height = getHeight();
 
-        // Skip rendering if panel is not ready or dimensions are invalid
+        // Пропускаем рендеринг, если панель не готова или имеет некорректные размеры
         if (!isShowing() || width <= 0 || height <= 0 || renderer == null) {
-            System.out.println("Skipping render: Size " + width + "x" + height + ", Showing: " + isShowing());
+            System.out.println("Skipping render: Size " + width + "x" + height + ", Showing: " + isShowing() + ", Renderer valid: " + (renderer!=null));
             statusMessage = (width <= 0 || height <= 0) ? "Panel size invalid." : "Panel not ready.";
             isRendering = false;
-            repaint(); // Repaint to show the status message
+            repaint(); // Перерисовываем, чтобы показать статусное сообщение
             return;
         }
 
         System.out.println("Triggering render for size: " + width + "x" + height);
-        isRendering = true;
-        statusMessage = "Rendering...";
-        repaint(); // Show "Rendering..." message and potentially loading indicator
+        isRendering = true; // Устанавливаем флаг рендеринга
+        statusMessage = "Rendering..."; // Обновляем статус
+        repaint(); // Перерисовываем для отображения "Rendering..." и индикатора загрузки
 
         FractalState currentState = viewModel.getCurrentState();
+        // Проверка, что состояние доступно
         if (currentState == null) {
             System.err.println("Cannot render: Current state is null.");
             statusMessage = "Error: State is null.";
@@ -192,119 +223,136 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
             return;
         }
 
-        // Call the renderer asynchronously
+        // Вызываем асинхронный метод рендерера
         renderer.render(currentState, width, height,
-                // onComplete callback
+                // Callback, вызываемый при успешном завершении рендеринга (в EDT)
                 newImage -> {
-                    isRendering = false; // Mark rendering as finished
+                    isRendering = false; // Сбрасываем флаг рендеринга
                     if (newImage != null) {
-                        this.fractalImage = newImage; // Update the image
-                        // Update status with viewport details
-                        FractalState completedState = viewModel.getCurrentState(); // Get state again in case it changed slightly
+                        this.fractalImage = newImage; // Обновляем изображение фрактала
+                        // Обновляем статусное сообщение с деталями текущего вида
+                        FractalState completedState = viewModel.getCurrentState(); // Получаем состояние на момент завершения
                         statusMessage = String.format("Ready. Viewport: X=[%.4g, %.4g], Y=[%.4g, %.4g], Iter: %d",
                                 completedState.getViewport().getMinX(), completedState.getViewport().getMaxX(),
                                 completedState.getViewport().getMinY(), completedState.getViewport().getMaxY(),
                                 completedState.getMaxIterations());
                     } else {
-                        // Handle rendering error
+                        // Обработка ошибки рендеринга
                         statusMessage = "Error during rendering.";
-                        this.fractalImage = null; // Ensure no old image is shown
+                        this.fractalImage = null; // Убираем старое изображение
                     }
-                    repaint(); // Redraw the panel with the new image or error status
+                    repaint(); // Перерисовываем панель с новым изображением или статусом ошибки
                 },
-                // onCancel callback
+                // Callback, вызываемый при отмене рендеринга (в EDT)
                 () -> {
-                    isRendering = false; // Mark rendering as finished (cancelled)
-                    FractalState cancelledState = viewModel.getCurrentState(); // Get state at cancellation time
-                    statusMessage = String.format("Cancelled. Viewport: X=[%.4g, %.4g], Y=[%.4g, %.4g], Iter: %d",
-                            cancelledState.getViewport().getMinX(), cancelledState.getViewport().getMaxX(),
-                            cancelledState.getViewport().getMinY(), cancelledState.getViewport().getMaxY(),
-                            cancelledState.getMaxIterations());
-                    // Do not clear the image, leave the partially rendered or previous one
-                    repaint(); // Update status message
+                    isRendering = false; // Сбрасываем флаг рендеринга
+                    FractalState cancelledState = viewModel.getCurrentState(); // Получаем состояние на момент отмены
+                    // Обновляем статус, указывая на отмену и параметры на тот момент
+                     if (cancelledState != null) { // Добавим проверку, вдруг состояние успело стать null
+                        statusMessage = String.format("Cancelled. Viewport: X=[%.4g, %.4g], Y=[%.4g, %.4g], Iter: %d",
+                                cancelledState.getViewport().getMinX(), cancelledState.getViewport().getMaxX(),
+                                cancelledState.getViewport().getMinY(), cancelledState.getViewport().getMaxY(),
+                                cancelledState.getMaxIterations());
+                     } else {
+                         statusMessage = "Cancelled. (State unavailable)";
+                     }
+                    // Не очищаем изображение, оставляем то, что успело отрисоваться или было до этого
+                    repaint(); // Перерисовываем для обновления статусного сообщения
                 }
         );
     }
 
     /**
-     * Paints the component. Draws the background, the fractal image (or status message),
-     * the loading indicator if rendering, and the zoom selection rectangle.
+     * Отрисовывает содержимое компонента.
+     * Вызывается системой Swing при необходимости перерисовки панели (например, после вызова repaint()).
+     * Рисует фон, затем актуальное изображение фрактала (если доступно) или статусное сообщение.
+     * Если идет рендеринг, поверх рисуется индикатор загрузки.
+     * Также рисует прямоугольник выделения для зума, если пользователь его рисует.
      *
-     * @param g The Graphics context to paint on.
+     * @param g Графический контекст для отрисовки.
      */
     @Override
     protected void paintComponent(Graphics g) {
-        super.paintComponent(g); // Paint background
+        super.paintComponent(g); // Отрисовка фона панели
 
-        // Get current state atomically
+        // Атомарно получаем текущие значения volatile переменных
         BufferedImage currentImage = this.fractalImage;
         boolean renderingNow = this.isRendering;
         String currentStatus = this.statusMessage;
 
-        // Draw the fractal image or a status message if image is null
+        // Рисуем изображение фрактала, если оно есть
         if (currentImage != null) {
             g.drawImage(currentImage, 0, 0, this);
         } else {
-            // Draw status message centered if no image
-            g.setColor(Color.DARK_GRAY); // Use a less bright color for background text
-            g.fillRect(0,0, getWidth(), getHeight()); // Fill background to obscure artifacts
-            g.setColor(Color.WHITE);
+            // Если изображения нет, рисуем фон и статусное сообщение по центру
+            g.setColor(Color.DARK_GRAY); // Цвет фона для текста
+            g.fillRect(0, 0, getWidth(), getHeight()); // Заливаем фон, чтобы скрыть возможные артефакты
+            g.setColor(Color.WHITE); // Цвет текста
             g.setFont(new Font("SansSerif", Font.PLAIN, 16));
             FontMetrics fm = g.getFontMetrics();
             String message = currentStatus != null ? currentStatus : "Status unavailable";
             int stringWidth = fm.stringWidth(message);
             int stringAscent = fm.getAscent();
+            // Центрируем текст по горизонтали и вертикали
             int x = (getWidth() - stringWidth) / 2;
-            int y = (getHeight() + stringAscent) / 2 - fm.getDescent(); // Center vertically
+            int y = (getHeight() - stringAscent) / 2 + fm.getAscent(); // Более точное центрирование по вертикали
             g.drawString(message, x, y);
         }
 
-        // Draw loading indicator overlay if rendering is in progress
+        // Рисуем индикатор загрузки поверх всего, если идет рендеринг
         if (renderingNow) {
             drawLoadingIndicator(g);
         }
 
-        // Draw the zoom selection rectangle (if user is dragging)
+        // Рисуем прямоугольник выделения для зума (если пользователь тянет мышь)
+        // Метод drawSelectionRectangle сам проверит, нужно ли рисовать
         zoomListener.drawSelectionRectangle(g);
     }
 
     /**
-     * Draws a semi-transparent overlay with "Rendering..." text
-     * to indicate background processing.
+     * Отрисовывает индикатор загрузки: полупрозрачный прямоугольник с текстом "Rendering...".
      *
-     * @param g The Graphics context to draw on.
+     * @param g Графический контекст для отрисовки.
      */
     private void drawLoadingIndicator(Graphics g) {
-        // Semi-transparent black overlay
-        g.setColor(new Color(0, 0, 0, 150)); // Black with alpha
-        g.fillRect(0, getHeight() / 2 - 20, getWidth(), 40); // Centered vertically
+        // Сохраняем текущие настройки Graphics
+        Graphics2D g2d = (Graphics2D) g.create();
+        try {
+            // Полупрозрачный черный фон для индикатора
+            g2d.setColor(new Color(0, 0, 0, 150)); // Черный с альфа-каналом
+            int indicatorHeight = 40;
+            int indicatorY = getHeight() / 2 - indicatorHeight / 2; // Центрируем по вертикали
+            g2d.fillRect(0, indicatorY, getWidth(), indicatorHeight);
 
-        // White text on the overlay
-        g.setColor(Color.WHITE);
-        g.setFont(new Font("SansSerif", Font.BOLD, 18));
-        FontMetrics fm = g.getFontMetrics();
-        String loadingText = "Rendering...";
-        int stringWidth = fm.stringWidth(loadingText);
-        int stringAscent = fm.getAscent();
-        // Center text horizontally and vertically within the overlay rect
-        int x = (getWidth() - stringWidth) / 2;
-        int y = (getHeight() + stringAscent) / 2 - fm.getDescent();
-        g.drawString(loadingText, x, y);
+            // Текст "Rendering..." белым цветом
+            g2d.setColor(Color.WHITE);
+            g2d.setFont(new Font("SansSerif", Font.BOLD, 18));
+            FontMetrics fm = g2d.getFontMetrics();
+            String loadingText = "Rendering...";
+            int stringWidth = fm.stringWidth(loadingText);
+            // Центрируем текст внутри прямоугольника индикатора
+            int textX = (getWidth() - stringWidth) / 2;
+            int textY = indicatorY + (indicatorHeight - fm.getHeight()) / 2 + fm.getAscent();
+            g2d.drawString(loadingText, textX, textY);
+        } finally {
+            g2d.dispose(); // Восстанавливаем исходные настройки Graphics
+        }
     }
 
     /**
-     * Listens for property changes from the ViewModel.
-     * Specifically triggers a re-render when the {@code FractalViewModel.PROPERTY_STATE} changes.
+     * Обрабатывает события изменения свойств, поступающие от {@link FractalViewModel}.
+     * Реагирует на изменение свойства {@code FractalViewModel.PROPERTY_STATE},
+     * запуская перерисовку фрактала {@link #triggerRender()}.
      *
-     * @param evt The PropertyChangeEvent object.
+     * @param evt Событие изменения свойства {@link PropertyChangeEvent}.
      */
     @Override
     public void propertyChange(PropertyChangeEvent evt) {
-        // Check if the fractal state property has changed
+        // Проверяем, изменилось ли свойство состояния фрактала
         if (FractalViewModel.PROPERTY_STATE.equals(evt.getPropertyName())) {
             System.out.println("FractalPanel received state update. Triggering render.");
-            // Ensure rendering happens on the EDT if state change wasn't triggered by user interaction
-            // Though triggerRender itself is safe, direct calls following state changes might benefit
+            // Запускаем рендеринг. Если мы уже в EDT, вызываем напрямую,
+            // иначе - через invokeLater для безопасности Swing.
              if (SwingUtilities.isEventDispatchThread()) {
                  triggerRender();
              } else {
@@ -314,24 +362,27 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
     }
 
     /**
-     * Specifies the preferred size for this panel.
-     * Used by layout managers.
+     * Возвращает предпочтительный размер для этой панели.
+     * Используется менеджерами компоновки Swing.
      *
-     * @return The preferred dimension (800x600).
+     * @return Рекомендуемый размер {@link Dimension} (800x600).
      */
     @Override
     public Dimension getPreferredSize() {
+        // Задаем стандартный начальный размер
         return new Dimension(800, 600);
     }
 
     /**
-     * Gets the currently displayed fractal image.
-     * This can be used, for example, for saving the image.
-     * Returns a volatile read of the image buffer.
+     * Возвращает текущее отображаемое (или только что отрисованное) изображение фрактала.
+     * Может быть использовано, например, для сохранения изображения в файл.
+     * Выполняет volatile чтение поля {@code fractalImage}.
      *
-     * @return The current BufferedImage, or null if not yet rendered or if rendering failed.
+     * @return Текущий {@link BufferedImage}, или {@code null}, если изображение еще не
+     *         отрисовано или произошла ошибка рендеринга.
      */
     public BufferedImage getCurrentImage() {
-        return this.fractalImage; // Return the volatile reference
+        // Возвращаем volatile ссылку на текущее изображение
+        return this.fractalImage;
     }
 }

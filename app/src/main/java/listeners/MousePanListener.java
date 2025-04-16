@@ -1,5 +1,3 @@
-// File: app/src/main/java/listeners/MousePanListener.java
-// ИЗМЕНЕНО: Импорты скорректированы
 package listeners;
 
 import viewmodel.FractalViewModel; // core
@@ -13,25 +11,37 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionListener;
 
 /**
- * Handles panning the fractal view using the right mouse button drag.
+ * Обрабатывает панорамирование (перемещение) вида фрактала с помощью
+ * перетаскивания правой кнопки мыши.
+ * Реализует {@link MouseAdapter} и {@link MouseMotionListener}.
  */
 public class MousePanListener extends MouseAdapter implements MouseMotionListener {
 
+    /** ViewModel для доступа к состоянию и выполнения панорамирования. */
     private final FractalViewModel viewModel;
-    private final JPanel panel; // Панель, на которой слушаем события
-    private Point lastPoint = null; // Последняя точка при перетаскивании
+    /** Панель, на которой отслеживаются события мыши. */
+    private final JPanel panel;
+    /** Последняя зафиксированная точка мыши во время перетаскивания. */
+    private Point lastPoint = null;
+    /** Исходный курсор панели до начала панорамирования. */
     private Cursor originalCursor; // Исходный курсор панели
 
     /**
-     * Constructs a MousePanListener.
-     * @param viewModel The application's ViewModel.
-     * @param panel The panel to listen on.
+     * Создает слушателя для панорамирования.
+     * @param viewModel ViewModel приложения. Не может быть null.
+     * @param panel Панель, на которой будут отслеживаться события. Не может быть null.
      */
     public MousePanListener(FractalViewModel viewModel, JPanel panel) {
         this.viewModel = viewModel;
         this.panel = panel;
     }
 
+    /**
+     * Вызывается при нажатии кнопки мыши.
+     * Если нажата правая кнопка, запоминает начальную точку,
+     * сохраняет текущий курсор и устанавливает курсор перемещения.
+     * @param e Событие мыши.
+     */
     @Override
     public void mousePressed(MouseEvent e) {
         // Начинаем панорамирование только правой кнопкой (или средней, если хотим)
@@ -44,6 +54,12 @@ public class MousePanListener extends MouseAdapter implements MouseMotionListene
         }
     }
 
+    /**
+     * Вызывается при перетаскивании мыши с нажатой кнопкой.
+     * Если нажата правая кнопка и панорамирование начато, вычисляет смещение (deltaX, deltaY)
+     * и вызывает метод {@link FractalViewModel#panOnScreenDelta(int, int, int, int)} для обновления вида.
+     * @param e Событие мыши.
+     */
     @Override
     public void mouseDragged(MouseEvent e) {
         // Продолжаем панорамирование, если нажата правая кнопка и есть начальная точка
@@ -64,6 +80,12 @@ public class MousePanListener extends MouseAdapter implements MouseMotionListene
         }
     }
 
+    /**
+     * Вызывается при отпускании кнопки мыши.
+     * Если была отпущена правая кнопка и выполнялось панорамирование,
+     * восстанавливает исходный курсор и сбрасывает состояние панорамирования.
+     * @param e Событие мыши.
+     */
     @Override
     public void mouseReleased(MouseEvent e) {
         // Завершаем панорамирование при отпускании правой кнопки
@@ -77,7 +99,10 @@ public class MousePanListener extends MouseAdapter implements MouseMotionListene
         }
     }
 
-    // mouseMoved не нужен для панорамирования перетаскиванием
+    /**
+     * Метод интерфейса {@link MouseMotionListener}. Не используется в данной реализации.
+     * @param e Событие мыши.
+     */
     @Override
     public void mouseMoved(MouseEvent e) { }
 }

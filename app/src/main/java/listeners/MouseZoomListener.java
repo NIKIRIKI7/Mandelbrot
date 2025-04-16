@@ -1,8 +1,7 @@
 // File: app/src/main/java/listeners/MouseZoomListener.java
-// ИЗМЕНЕНО: Пакет и импорт FractalViewModel исправлены
-package listeners; // <-- ИСПРАВЛЕНО: Пакет изменен на 'listeners'
+package listeners;
 
-import viewmodel.FractalViewModel; // <-- ИСПРАВЛЕНО: Импорт скорректирован
+import viewmodel.FractalViewModel;
 
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
@@ -12,23 +11,41 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionListener;
 
 /**
- * Handles zooming into a selected rectangular region using the left mouse button drag.
- * Draws the selection rectangle on the panel.
+ * Обрабатывает масштабирование (зум) в выделенную прямоугольную область
+ * с помощью перетаскивания левой кнопки мыши.
+ * Также отвечает за отрисовку прямоугольника выделения на панели.
+ * Реализует {@link MouseAdapter} и {@link MouseMotionListener}.
  */
 public class MouseZoomListener extends MouseAdapter implements MouseMotionListener {
 
+    /** ViewModel для доступа к состоянию и выполнения масштабирования. */
     private final FractalViewModel viewModel;
-    private final JPanel panel; // Панель, на которой рисуем и слушаем
-    private Point startPoint = null; // Начало выделения
-    private Point endPoint = null;   // Конец выделения (текущая позиция мыши при драге)
-    private static final int MIN_ZOOM_SIZE = 5; // Минимальный размер прямоугольника для зума (пиксели)
+    /** Панель, на которой отслеживаются события и рисуется прямоугольник выделения. */
+    private final JPanel panel;
+    /** Начальная точка выделения при нажатии левой кнопки мыши. */
+    private Point startPoint = null;
+    /** Конечная точка выделения (текущая позиция мыши при перетаскивании). */
+    private Point endPoint = null;
+    /** Минимальный размер стороны прямоугольника в пикселях, чтобы зум сработал. */
+    private static final int MIN_ZOOM_SIZE = 5;
 
 
+    /**
+     * Создает слушателя для масштабирования выделением.
+     * @param viewModel ViewModel приложения. Не может быть null.
+     * @param panel Панель, на которой будут отслеживаться события. Не может быть null.
+     */
     public MouseZoomListener(FractalViewModel viewModel, JPanel panel) {
         this.viewModel = viewModel;
         this.panel = panel;
     }
 
+    /**
+     * Вызывается при нажатии кнопки мыши.
+     * Если нажата левая кнопка, запоминает начальную точку выделения
+     * и инициирует перерисовку панели (для возможного отображения начальной точки).
+     * @param e Событие мыши.
+     */
     @Override
     public void mousePressed(MouseEvent e) {
         // Начинаем выделение левой кнопкой
@@ -39,6 +56,12 @@ public class MouseZoomListener extends MouseAdapter implements MouseMotionListen
         }
     }
 
+    /**
+     * Вызывается при перетаскивании мыши с нажатой кнопкой.
+     * Если нажата левая кнопка и выделение начато, обновляет конечную точку
+     * и инициирует перерисовку панели для отображения прямоугольника выделения.
+     * @param e Событие мыши.
+     */
     @Override
     public void mouseDragged(MouseEvent e) {
         // Обновляем конечную точку и перерисовываем прямоугольник выделения
@@ -48,6 +71,15 @@ public class MouseZoomListener extends MouseAdapter implements MouseMotionListen
         }
     }
 
+    /**
+     * Вызывается при отпускании кнопки мыши.
+     * Если была отпущена левая кнопка, выделение было начато и конечная точка установлена,
+     * проверяет, имеет ли выделенный прямоугольник достаточный размер.
+     * Если да, вызывает метод {@link FractalViewModel#zoomOnScreenRect(int, int, int, int, int, int)}
+     * для выполнения масштабирования. Затем сбрасывает состояние выделения и инициирует
+     * перерисовку для удаления прямоугольника.
+     * @param e Событие мыши.
+     */
     @Override
     public void mouseReleased(MouseEvent e) {
         // Завершаем выделение и зумируем, если прямоугольник валидный
@@ -71,33 +103,42 @@ public class MouseZoomListener extends MouseAdapter implements MouseMotionListen
     }
 
     /**
-     * Рисует прямоугольник выделения на Graphics объекте панели.
-     * Вызывается из метода paintComponent панели.
+     * Рисует прямоугольник выделения на предоставленном графическом контексте.
+     * Вызывается из метода {@code paintComponent} панели {@link #panel}.
+     * Рисует прямоугольник только если выделение активно ({@code startPoint} и {@code endPoint} не null).
+     * Использует белую пунктирную линию.
      *
-     * @param g Graphics context.
+     * @param g Графический контекст панели для отрисовки.
      */
     public void drawSelectionRectangle(Graphics g) {
         if (startPoint != null && endPoint != null) {
             Graphics2D g2d = (Graphics2D) g.create(); // Создаем копию, чтобы не менять настройки Graphics
-            g2d.setColor(Color.WHITE); // Цвет рамки
-            // Используем XOR режим для инвертирования цветов под рамкой (не всегда хорошо работает)
-            // g2d.setXORMode(Color.BLACK);
+            try { // Используем try-finally для гарантированного dispose()
+                g2d.setColor(Color.WHITE); // Цвет рамки
+                // Используем XOR режим для инвертирования цветов под рамкой (не всегда хорошо работает)
+                // g2d.setXORMode(Color.BLACK);
 
-            // Устанавливаем штриховую линию
-            g2d.setStroke(new BasicStroke(1, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
-                                          10.0f, new float[]{3.0f}, 0.0f));
+                // Устанавливаем штриховую линию
+                g2d.setStroke(new BasicStroke(1, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
+                                              10.0f, new float[]{3.0f}, 0.0f));
 
 
-            int x = Math.min(startPoint.x, endPoint.x);
-            int y = Math.min(startPoint.y, endPoint.y);
-            int width = Math.abs(startPoint.x - endPoint.x);
-            int height = Math.abs(startPoint.y - endPoint.y);
+                int x = Math.min(startPoint.x, endPoint.x);
+                int y = Math.min(startPoint.y, endPoint.y);
+                int width = Math.abs(startPoint.x - endPoint.x);
+                int height = Math.abs(startPoint.y - endPoint.y);
 
-            g2d.drawRect(x, y, width, height);
-            g2d.dispose(); // Освобождаем копию Graphics
+                g2d.drawRect(x, y, width, height);
+            } finally {
+                 g2d.dispose(); // Освобождаем копию Graphics
+            }
         }
     }
 
+    /**
+     * Метод интерфейса {@link MouseMotionListener}. Не используется в данной реализации.
+     * @param e Событие мыши.
+     */
     @Override
     public void mouseMoved(MouseEvent e) {
         // Не используется для зума

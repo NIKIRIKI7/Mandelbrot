@@ -1,50 +1,56 @@
 // File: app/src/main/java/view/MenuBar.java
 
 // File: app/src/main/java/view/MenuBar.java
-// ИЗМЕНЕНО: Импорты скорректированы
 package view;
 
-import model.ColorScheme; // core
-import model.GrayscaleScheme; // core
-import model.NonlinearRGBScheme; // core
-import services.FileService; // core
-import viewmodel.FractalViewModel; // core
+import model.ColorScheme;
+import model.GrayscaleScheme;
+import model.NonlinearRGBScheme;
+import services.FileService;
+import viewmodel.FractalViewModel;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
-import java.awt.image.BufferedImage; // Добавлен импорт
+import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.IOException; // Добавлен импорт
+import java.io.IOException;
 import java.util.List;
 
 /**
- * Creates the main menu bar for the application.
+ * Создает и управляет главным меню приложения для исследования фракталов.
+ * Предоставляет доступ к функциям загрузки/сохранения состояния, сохранения изображений,
+ * отмены действий, выбора цветовой схемы и настройки итераций.
  */
 public class MenuBar extends JMenuBar {
 
+    /** ViewModel для доступа к состоянию фрактала и выполнения действий. */
     private final FractalViewModel viewModel;
+    /** Сервис для операций сохранения и загрузки файлов. */
     private final FileService fileService;
-    private final FractalPanel fractalPanel; // Нужен для получения текущего изображения
-    private final JFrame ownerFrame; // Для диалоговых окон
+    /** Панель, отображающая фрактал (необходима для получения текущего изображения при сохранении). */
+    private final FractalPanel fractalPanel;
+    /** Родительское окно JFrame (используется для отображения диалоговых окон). */
+    private final JFrame ownerFrame;
 
-    private JMenuItem undoMenuItem; // Для включения/выключения
+    /** Пункт меню "Undo", который включается/выключается в зависимости от доступности отмены. */
+    private JMenuItem undoMenuItem;
 
-    // Список доступных цветовых схем
+    /** Список доступных цветовых схем для выбора пользователем. */
     private final List<ColorScheme> availableColorSchemes = List.of(
             new NonlinearRGBScheme(),
             new GrayscaleScheme()
-            // Добавьте сюда другие экземпляры ваших схем
+            // При необходимости добавьте сюда другие экземпляры ваших схем
     );
 
     /**
-     * Constructs the MenuBar.
+     * Конструирует MenuBar и инициализирует все его элементы.
      *
-     * @param viewModel    The application's ViewModel.
-     * @param fileService  The service for file operations.
-     * @param fractalPanel The panel displaying the fractal (needed for saving image).
-     * @param ownerFrame   The main application frame (for dialogs).
+     * @param viewModel    ViewModel приложения. Не может быть null.
+     * @param fileService  Сервис для файловых операций. Не может быть null.
+     * @param fractalPanel Панель отрисовки фрактала (для сохранения изображения). Не может быть null.
+     * @param ownerFrame   Главное окно приложения (для диалоговых окон). Не может быть null.
      */
     public MenuBar(FractalViewModel viewModel, FileService fileService, FractalPanel fractalPanel, JFrame ownerFrame) {
         this.viewModel = viewModel;
@@ -52,117 +58,133 @@ public class MenuBar extends JMenuBar {
         this.fractalPanel = fractalPanel;
         this.ownerFrame = ownerFrame;
 
+        // Создание основных меню
         createFileMenu();
         createEditMenu();
         createViewMenu();
         // Добавьте другие меню (Help, etc.) по необходимости
 
-        // Слушаем ViewModel для обновления состояния Undo
+        // Добавление слушателя к ViewModel для отслеживания изменений
         viewModel.addPropertyChangeListener(evt -> {
+            // Обновление доступности пункта "Undo"
             if (FractalViewModel.PROPERTY_CAN_UNDO.equals(evt.getPropertyName())) {
                 updateUndoState((Boolean) evt.getNewValue());
             }
-            // ИЗМЕНЕНО: Слушаем изменение состояния для обновления меню схем при загрузке
+            // Обновление выбора цветовой схемы при изменении состояния (например, после загрузки)
             else if (FractalViewModel.PROPERTY_STATE.equals(evt.getPropertyName())) {
                 updateColorSchemeSelection();
             }
         });
-        // Устанавливаем начальное состояние Undo
+        // Установка начального состояния доступности "Undo"
         updateUndoState(viewModel.getUndoManager().canUndo());
-        updateColorSchemeSelection(); // Устанавливаем начальное состояние схем
+        // Установка начального выбора в меню цветовых схем
+        updateColorSchemeSelection();
     }
 
+    /**
+     * Создает меню "File" со стандартными опциями: Load, Save As, Exit.
+     */
     private void createFileMenu() {
         JMenu fileMenu = new JMenu("File");
-        fileMenu.setMnemonic(KeyEvent.VK_F);
+        fileMenu.setMnemonic(KeyEvent.VK_F); // Горячая клавиша Alt+F
 
-        // --- Load ---
+        // --- Пункт "Load Fractal State..." ---
         JMenuItem loadItem = new JMenuItem("Load Fractal State...");
-        loadItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, ActionEvent.CTRL_MASK));
+        loadItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, ActionEvent.CTRL_MASK)); // Ctrl+O
         loadItem.addActionListener(e -> loadFractal());
         fileMenu.add(loadItem);
 
-        // --- Save As ---
+        // --- Подменю "Save As..." ---
         JMenu saveAsMenu = new JMenu("Save As...");
 
+        // Сохранить состояние (.frac)
         JMenuItem saveFracItem = new JMenuItem("Fractal State (.frac)");
         saveFracItem.addActionListener(e -> saveFractal());
         saveAsMenu.add(saveFracItem);
 
+        // Сохранить изображение (.png)
         JMenuItem savePngItem = new JMenuItem("Image (.png)");
         savePngItem.addActionListener(e -> saveImage("PNG"));
         saveAsMenu.add(savePngItem);
 
+        // Сохранить изображение (.jpg)
         JMenuItem saveJpegItem = new JMenuItem("Image (.jpg)");
         saveJpegItem.addActionListener(e -> saveImage("JPEG"));
         saveAsMenu.add(saveJpegItem);
 
         fileMenu.add(saveAsMenu);
-        fileMenu.addSeparator();
+        fileMenu.addSeparator(); // Разделитель
 
-        // --- Exit ---
+        // --- Пункт "Exit" ---
         JMenuItem exitItem = new JMenuItem("Exit");
-        exitItem.setMnemonic(KeyEvent.VK_X);
+        exitItem.setMnemonic(KeyEvent.VK_X); // Горячая клавиша X (внутри меню File)
         exitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Q, ActionEvent.CTRL_MASK)); // Ctrl+Q для выхода
         exitItem.addActionListener(e -> {
-            // ИЗМЕНЕНО: Инициируем закрытие окна штатным образом, чтобы сработал WindowListener
+            // Инициируем стандартное событие закрытия окна, чтобы сработал WindowListener в MainFrame
             ownerFrame.dispatchEvent(new java.awt.event.WindowEvent(ownerFrame, java.awt.event.WindowEvent.WINDOW_CLOSING));
-            // System.exit(0); // Простой выход заменен
         });
         fileMenu.add(exitItem);
 
-        add(fileMenu);
+        add(fileMenu); // Добавляем меню "File" в строку меню
     }
 
+    /**
+     * Создает меню "Edit" с опцией "Undo".
+     */
     private void createEditMenu() {
         JMenu editMenu = new JMenu("Edit");
-        editMenu.setMnemonic(KeyEvent.VK_E);
+        editMenu.setMnemonic(KeyEvent.VK_E); // Alt+E
 
-        // --- Undo ---
+        // --- Пункт "Undo" ---
         undoMenuItem = new JMenuItem("Undo");
-        undoMenuItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Z, ActionEvent.CTRL_MASK));
+        undoMenuItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Z, ActionEvent.CTRL_MASK)); // Ctrl+Z
         undoMenuItem.addActionListener(e -> viewModel.undoLastAction());
-        undoMenuItem.setEnabled(false); // Изначально недоступно
+        undoMenuItem.setEnabled(false); // Изначально отмена недоступна
         editMenu.add(undoMenuItem);
 
-        add(editMenu);
+        add(editMenu); // Добавляем меню "Edit" в строку меню
     }
 
+    /**
+     * Создает меню "View" с опциями выбора цветовой схемы и установки максимального числа итераций.
+     */
     private void createViewMenu() {
         JMenu viewMenu = new JMenu("View");
-        viewMenu.setMnemonic(KeyEvent.VK_V);
+        viewMenu.setMnemonic(KeyEvent.VK_V); // Alt+V
 
-        // --- Color Scheme ---
+        // --- Подменю "Color Scheme" ---
         JMenu colorSchemeMenu = new JMenu("Color Scheme");
-        ButtonGroup schemeGroup = new ButtonGroup(); // Чтобы только одна схема была выбрана
+        ButtonGroup schemeGroup = new ButtonGroup(); // Гарантирует выбор только одной опции
 
-        // ИЗМЕНЕНО: Получаем схему при создании меню, но выделение обновится в updateColorSchemeSelection()
-        // ColorScheme currentScheme = viewModel.getCurrentState().getColorScheme();
-
+        // Динамическое создание пунктов меню для каждой доступной цветовой схемы
         for (ColorScheme scheme : availableColorSchemes) {
             JRadioButtonMenuItem schemeItem = new JRadioButtonMenuItem(scheme.getName());
-            // schemeItem.setSelected(currentScheme.getClass().equals(scheme.getClass())); // Начальное выделение убрано, делается в update
+            // Начальное выделение устанавливается в updateColorSchemeSelection()
             schemeItem.addActionListener(e -> {
+                // Если пункт выбран пользователем
                 if (schemeItem.isSelected()) {
+                    // Устанавливаем выбранную схему через ViewModel
                     viewModel.changeColorScheme(scheme);
                 }
             });
-            schemeGroup.add(schemeItem);
+            schemeGroup.add(schemeItem); // Добавляем в группу для эксклюзивного выбора
             colorSchemeMenu.add(schemeItem);
         }
         viewMenu.add(colorSchemeMenu);
 
-        // --- Max Iterations ---
+        // --- Пункт "Set Max Iterations..." ---
         JMenuItem iterationsItem = new JMenuItem("Set Max Iterations...");
         iterationsItem.addActionListener(e -> changeMaxIterations());
         viewMenu.add(iterationsItem);
 
-        add(viewMenu);
+        add(viewMenu); // Добавляем меню "View" в строку меню
     }
 
     /**
-     * Updates the enabled state of the Undo menu item.
-     * @param canUndo true if undo is possible, false otherwise.
+     * Обновляет состояние (включен/выключен) пункта меню "Undo".
+     * Вызывается при изменении свойства {@code FractalViewModel.PROPERTY_CAN_UNDO}.
+     *
+     * @param canUndo true, если операция отмены доступна, иначе false.
      */
     private void updateUndoState(boolean canUndo) {
         if (undoMenuItem != null) {
@@ -170,40 +192,52 @@ public class MenuBar extends JMenuBar {
         }
     }
 
-    // --- Action Handlers ---
+    // --- Обработчики действий меню ---
 
+    /**
+     * Обрабатывает действие "Load Fractal State...".
+     * Открывает диалоговое окно выбора файла, загружает состояние фрактала (.frac)
+     * с помощью {@link FileService} и обновляет {@link FractalViewModel}.
+     */
     private void loadFractal() {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Load Fractal State");
+        // Фильтр для отображения только .frac файлов
         fileChooser.setFileFilter(new FileNameExtensionFilter("Fractal State Files (*.frac)", "frac"));
-        fileChooser.setAcceptAllFileFilterUsed(false);
+        fileChooser.setAcceptAllFileFilterUsed(false); // Не показывать "All Files"
 
-        int result = fileChooser.showOpenDialog(ownerFrame);
-        if (result == JFileChooser.APPROVE_OPTION) {
+        int result = fileChooser.showOpenDialog(ownerFrame); // Показываем диалог
+        if (result == JFileChooser.APPROVE_OPTION) { // Если пользователь выбрал файл
             File selectedFile = fileChooser.getSelectedFile();
             try {
-                // ИЗМЕНЕНО: loadState теперь не вызывает render, панель сама среагирует на PROPERTY_STATE
+                // Загружаем состояние через ViewModel. ViewModel уведомит панель о необходимости перерисовки.
                 viewModel.loadState(fileService.loadFractalState(selectedFile));
-                // Обновление выбора цветовой схемы произойдет через слушатель PROPERTY_STATE
+                // Обновление выбора цветовой схемы произойдет автоматически через слушатель свойства PROPERTY_STATE.
             } catch (Exception ex) {
                 showErrorDialog("Load Error", "Error loading fractal state: " + ex.getMessage());
-                ex.printStackTrace(); // Логирование для отладки
+                ex.printStackTrace(); // Логирование ошибки для отладки
             }
         }
     }
 
+    /**
+     * Обрабатывает действие "Save Fractal State (.frac)".
+     * Открывает диалоговое окно сохранения файла, получает текущее состояние из {@link FractalViewModel}
+     * и сохраняет его в файл .frac с помощью {@link FileService}.
+     */
     private void saveFractal() {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Save Fractal State As");
         fileChooser.setFileFilter(new FileNameExtensionFilter("Fractal State Files (*.frac)", "frac"));
         fileChooser.setAcceptAllFileFilterUsed(false);
-        // Предложить имя файла по умолчанию
+        // Предлагаем имя файла по умолчанию
         fileChooser.setSelectedFile(new File("mandelbrot_state.frac"));
 
         int result = fileChooser.showSaveDialog(ownerFrame);
         if (result == JFileChooser.APPROVE_OPTION) {
             File selectedFile = fileChooser.getSelectedFile();
             try {
+                // Сохраняем текущее состояние ViewModel в выбранный файл
                 fileService.saveFractalState(viewModel.getCurrentState(), selectedFile);
             } catch (IOException ex) {
                 showErrorDialog("Save Error", "Error saving fractal state: " + ex.getMessage());
@@ -212,11 +246,20 @@ public class MenuBar extends JMenuBar {
         }
     }
 
+    /**
+     * Обрабатывает действие "Save Image (.png)" или "Save Image (.jpg)".
+     * Получает текущее отрисованное изображение из {@link FractalPanel},
+     * открывает диалоговое окно сохранения файла и сохраняет изображение
+     * в выбранном формате (PNG или JPEG) с помощью {@link FileService}.
+     * Добавляет подпись с координатами на изображение.
+     *
+     * @param format Строка формата ("PNG" или "JPEG", регистронезависимо).
+     */
     private void saveImage(String format) {
-        // Получаем текущее изображение из панели
-        // ИЗМЕНЕНО: Используем геттер для получения изображения
+        // Получаем текущее отрисованное изображение из панели
         BufferedImage imageToSave = fractalPanel.getCurrentImage();
 
+        // Проверяем, доступно ли изображение для сохранения
         if (imageToSave == null) {
             JOptionPane.showMessageDialog(ownerFrame,
                     "No fractal image available to save yet. Please wait for rendering to complete.",
@@ -226,17 +269,19 @@ public class MenuBar extends JMenuBar {
 
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Save Image As " + format.toUpperCase());
+        // Определяем расширение и описание файла для фильтра
         String extension = format.toLowerCase().equals("jpeg") ? "jpg" : format.toLowerCase();
         String description = format.toUpperCase() + " Image Files (*." + extension + ")";
         fileChooser.setFileFilter(new FileNameExtensionFilter(description, extension));
         fileChooser.setAcceptAllFileFilterUsed(false);
+        // Предлагаем имя файла по умолчанию
         fileChooser.setSelectedFile(new File("mandelbrot_image." + extension));
 
         int result = fileChooser.showSaveDialog(ownerFrame);
         if (result == JFileChooser.APPROVE_OPTION) {
             File selectedFile = fileChooser.getSelectedFile();
             try {
-                // Передаем актуальное состояние viewModel для координат в подписи
+                // Передаем изображение, актуальное состояние ViewModel (для координат в подписи) и формат
                 fileService.saveImage(imageToSave, viewModel.getCurrentState(), selectedFile, format);
             } catch (Exception ex) {
                 showErrorDialog("Save Error", "Error saving image: " + ex.getMessage());
@@ -245,52 +290,64 @@ public class MenuBar extends JMenuBar {
         }
     }
 
+    /**
+     * Обрабатывает действие "Set Max Iterations...".
+     * Показывает диалоговое окно для ввода нового значения максимального числа итераций.
+     * Если введено корректное положительное число, обновляет значение через {@link FractalViewModel}.
+     */
     private void changeMaxIterations() {
+        // Получаем текущее значение для отображения в диалоге
         String currentIterationsStr = Integer.toString(viewModel.getCurrentState().getMaxIterations());
-        // ИЗМЕНЕНО: Указываем ownerFrame для центрирования диалога
+        // Отображаем диалог ввода
         String input = (String) JOptionPane.showInputDialog(
-                ownerFrame, // Вот здесь
+                ownerFrame, // Центрировать относительно главного окна
                 "Enter maximum iterations:",
                 "Set Max Iterations",
                 JOptionPane.PLAIN_MESSAGE,
-                null,
-                null,
-                currentIterationsStr
+                null, // Иконка по умолчанию
+                null, // Нет списка для выбора
+                currentIterationsStr // Начальное значение в поле ввода
         );
 
+        // Если пользователь ввел значение и не нажал "Cancel"
         if (input != null && !input.trim().isEmpty()) {
             try {
                 int newIterations = Integer.parseInt(input.trim());
+                // Проверяем, что значение положительное
                 if (newIterations > 0) {
-                    // ИЗМЕНЕНО: Метод ViewModel больше не вызывает render напрямую
+                    // Обновляем значение через ViewModel
                     viewModel.changeMaxIterations(newIterations);
                 } else {
                     showErrorDialog("Invalid Input", "Iterations must be a positive integer.");
                 }
             } catch (NumberFormatException ex) {
+                // Обработка ошибки, если введено не число
                 showErrorDialog("Invalid Input", "Invalid number format.");
             }
         }
     }
 
     /**
-     * Updates the radio button selection in the Color Scheme menu
-     * based on the current ViewModel state.
+     * Обновляет выбор радио-кнопки в меню "Color Scheme"
+     * в соответствии с текущей цветовой схемой, установленной в {@link FractalViewModel}.
+     * Вызывается при инициализации и при изменении состояния ({@code FractalViewModel.PROPERTY_STATE}).
      */
     private void updateColorSchemeSelection() {
-        // ИЗМЕНЕНО: Полностью переписан для большей надежности
-        if (viewModel == null || viewModel.getCurrentState() == null) return; // Защита
+        // Проверка на случай, если метод вызван до полной инициализации
+        if (viewModel == null || viewModel.getCurrentState() == null) return;
 
         ColorScheme currentScheme = viewModel.getCurrentState().getColorScheme();
-        if (currentScheme == null) return; // Защита
+        if (currentScheme == null) return; // Дополнительная защита
 
         try {
-            JMenu viewMenu = getMenu(2); // Меню View (индекс 2)
+            // Получаем меню "View" (предполагая, что оно третье по счету, индекс 2)
+            JMenu viewMenu = getMenu(2);
             if (viewMenu != null) {
-                // Ищем подменю "Color Scheme" по тексту (более надежно чем по индексу)
+                // Ищем подменю "Color Scheme" по тексту, а не по индексу (более надежно)
                 JMenu colorSchemeMenu = null;
                 for (int i = 0; i < viewMenu.getItemCount(); i++) {
                     JMenuItem item = viewMenu.getItem(i);
+                    // Проверяем, что это меню и текст совпадает
                     if (item instanceof JMenu && "Color Scheme".equals(item.getText())) {
                         colorSchemeMenu = (JMenu) item;
                         break;
@@ -298,17 +355,21 @@ public class MenuBar extends JMenuBar {
                 }
 
                 if (colorSchemeMenu != null) {
+                    // Проходим по всем пунктам подменю цветовых схем
                     for (int i = 0; i < colorSchemeMenu.getItemCount(); i++) {
                         JMenuItem item = colorSchemeMenu.getItem(i);
+                        // Убеждаемся, что это радио-кнопка
                         if (item instanceof JRadioButtonMenuItem) {
                             JRadioButtonMenuItem radioItem = (JRadioButtonMenuItem) item;
-                            // Ищем соответствующую схему в availableColorSchemes по имени пункта меню
-                            String itemName = radioItem.getText();
+                            String itemName = radioItem.getText(); // Имя схемы из пункта меню
+
+                            // Проверяем, соответствует ли имя пункта меню и класс текущей активной схеме
                             boolean shouldBeSelected = availableColorSchemes.stream()
                                     .anyMatch(scheme -> scheme.getName().equals(itemName) &&
                                             scheme.getClass().equals(currentScheme.getClass()));
-                            // Вызываем setSelected только если состояние нужно изменить,
-                            // чтобы не вызывать лишний раз ActionListener
+
+                            // Устанавливаем состояние selected, только если оно отличается от текущего,
+                            // чтобы избежать рекурсивного вызова ActionListener
                             if (radioItem.isSelected() != shouldBeSelected) {
                                 radioItem.setSelected(shouldBeSelected);
                             }
@@ -317,16 +378,18 @@ public class MenuBar extends JMenuBar {
                 }
             }
         } catch (Exception e) {
-            // Логгирование ошибки обновления меню, но не прерываем работу приложения
+            // Логгируем ошибку, но не прерываем работу приложения
             System.err.println("Error updating color scheme menu selection: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
+
     /**
-     * Helper method to show error messages.
-     * @param title The dialog title.
-     * @param message The error message.
+     * Вспомогательный метод для отображения диалогового окна с сообщением об ошибке.
+     *
+     * @param title   Заголовок окна ошибки.
+     * @param message Текст сообщения об ошибке.
      */
     private void showErrorDialog(String title, String message) {
         JOptionPane.showMessageDialog(ownerFrame, message, title, JOptionPane.ERROR_MESSAGE);
@@ -351,109 +414,137 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
-import java.awt.event.MouseAdapter; // <-- Импорт для листенера
-import java.awt.event.MouseEvent;  // <-- Импорт для листенера
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 
 /**
- * JPanel responsible for displaying the rendered fractal image.
- * Listens to ViewModel updates and handles mouse interactions (zoom, pan, Julia set invocation).
+ * Компонент JPanel, отвечающий за отображение отрисованного изображения фрактала.
+ * Слушает обновления от {@link FractalViewModel}, обрабатывает взаимодействия с мышью
+ * (масштабирование выделением, панорамирование, вызов окна множества Жюлиа по двойному клику)
+ * и управляет процессом рендеринга через {@link FractalRenderer}.
+ * Реализует {@link PropertyChangeListener} для реакции на изменения состояния модели.
  */
 public class FractalPanel extends JPanel implements PropertyChangeListener {
 
+    /** ViewModel приложения, управляющая состоянием фрактала. */
     private final FractalViewModel viewModel;
+    /**
+     * Изображение фрактала. Используется {@code volatile} для обеспечения видимости
+     * между потоком рендеринга и потоком диспетчеризации событий (EDT).
+     */
     private volatile BufferedImage fractalImage;
+    /** Рендерер, выполняющий вычисления и отрисовку фрактала в отдельном потоке. */
     private final FractalRenderer renderer;
+    /** Слушатель для обработки масштабирования (зума) выделением области левой кнопкой мыши. */
     private final MouseZoomListener zoomListener;
+    /** Слушатель для обработки панорамирования (перетаскивания) правой кнопкой мыши. */
     private final MousePanListener panListener;
+    /**
+     * Флаг, указывающий, идет ли процесс рендеринга в данный момент.
+     * Используется {@code volatile} для потокобезопасного доступа из EDT и потока рендеринга.
+     */
     private volatile boolean isRendering = false;
+    /**
+     * Статусное сообщение, отображаемое на панели (например, "Rendering...", "Ready.", координаты).
+     * Используется {@code volatile} для потокобезопасного доступа.
+     */
     private volatile String statusMessage = "Initializing...";
 
     /**
-     * Constructs the FractalPanel with a ViewModel and Renderer.
-     * Initializes mouse listeners for zooming, panning, and opening Julia Set window on double-click.
-     * Listens for component resize/show events and ViewModel state changes to trigger rendering.
+     * Конструирует FractalPanel.
+     * Инициализирует слушателей мыши для масштабирования, панорамирования и открытия окна множества Жюлиа.
+     * Добавляет слушателей для событий изменения размера/видимости компонента и изменений состояния ViewModel
+     * для запуска рендеринга.
      *
-     * @param viewModel The application's ViewModel.
-     * @param renderer  The fractal renderer.
+     * @param viewModel ViewModel приложения. Не может быть null.
+     * @param renderer  Рендерер фрактала. Не может быть null.
      */
     public FractalPanel(FractalViewModel viewModel, FractalRenderer renderer) {
         this.viewModel = viewModel;
         this.renderer = renderer;
-        this.fractalImage = null;
+        this.fractalImage = null; // Изображение изначально отсутствует
 
+        // Подписываемся на изменения в ViewModel
         this.viewModel.addPropertyChangeListener(this);
-        setBackground(Color.BLACK);
-        setOpaque(true);
+        setBackground(Color.BLACK); // Цвет фона по умолчанию
+        setOpaque(true); // Компонент непрозрачный
 
-        // Инициализация слушателей
+        // Инициализация слушателей мыши
         zoomListener = new MouseZoomListener(viewModel, this);
         panListener = new MousePanListener(viewModel, this);
 
-        // Добавление слушателей событий мыши
-        addMouseListener(zoomListener);
-        addMouseMotionListener(zoomListener);
-        // ИЗМЕНЕНО: Удалена строка addMouseWheelListener(zoomListener),
-        // так как MouseZoomListener не реализует MouseWheelListener в предоставленной версии.
-        // Если зум колесом нужен, MouseZoomListener должен быть доработан и строка возвращена.
-        // addMouseWheelListener(zoomListener);
-        addMouseListener(panListener);
-        addMouseMotionListener(panListener);
+        // Добавление слушателей событий мыши к панели
+        addMouseListener(zoomListener);       // Нажатие/отпускание для зума
+        addMouseMotionListener(zoomListener); // Перетаскивание для зума
+        addMouseListener(panListener);       // Нажатие/отпускание для панорамирования
+        addMouseMotionListener(panListener); // Перетаскивание для панорамирования
 
-        // Слушатель изменения размера и видимости компонента
+        // Слушатель для отслеживания изменения размера и момента первого отображения панели
         addComponentListener(new ComponentAdapter() {
+            /**
+             * Вызывается при изменении размера панели. Запускает рендеринг,
+             * если панель видима и имеет корректные размеры.
+             * @param e Событие изменения компонента.
+             */
             @Override
             public void componentResized(ComponentEvent e) {
-                 // Рендерим только если панель видима и имеет корректные размеры
                  if (isShowing() && getWidth() > 0 && getHeight() > 0) {
-                    System.out.println("Panel resized. Triggering render.");
-                    triggerRender();
+                    System.out.println("Panel resized ("+ getWidth() + "x" + getHeight() +"). Triggering render.");
+                    triggerRender(); // Запускаем перерисовку при изменении размера
                 }
             }
 
-            // Также триггерим рендер при первом показе панели (после изменения размера)
+            /**
+             * Вызывается, когда панель становится видимой. Запускает рендеринг,
+             * если панель имеет корректные размеры. Важно для инициализации
+             * после того, как компоновщик определил размеры.
+             * @param e Событие изменения компонента.
+             */
             @Override
             public void componentShown(ComponentEvent e) {
                  if (getWidth() > 0 && getHeight() > 0) {
-                   System.out.println("Panel shown. Triggering render.");
-                   triggerRender();
+                   System.out.println("Panel shown ("+ getWidth() + "x" + getHeight() +"). Triggering render.");
+                   triggerRender(); // Запускаем перерисовку при первом отображении
                }
             }
        });
 
-       // --- Добавляем слушатель для окна Жюлиа по двойному клику ---
-       /**
-        * Mouse listener to detect double-clicks and open the corresponding Julia Set window.
-        */
+       // Слушатель для обработки двойного клика левой кнопкой мыши для открытия окна Жюлиа
        addMouseListener(new MouseAdapter() {
+            /**
+             * Вызывается при клике мыши. Проверяет двойной клик левой кнопкой
+             * и вызывает {@link #openJuliaSetWindow(Point)} для открытия
+             * соответствующего окна множества Жюлиа.
+             * @param e Событие мыши.
+             */
             @Override
             public void mouseClicked(MouseEvent e) {
-                // Проверяем двойной клик левой кнопкой мыши
+                // Проверяем двойной клик левой кнопкой
                 if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
                     System.out.println("Double-click detected at: " + e.getPoint());
-                    openJuliaSetWindow(e.getPoint());
+                    openJuliaSetWindow(e.getPoint()); // Открываем окно Жюлиа
                 }
             }
         });
-       // -------------------------------------------------------------
     }
 
     /**
-     * Opens the Julia Set window corresponding to the complex number
-     * at the clicked screen coordinates.
-     * Retrieves current color scheme and iteration count from the ViewModel
-     * to initialize the Julia Set view.
+     * Открывает окно для отображения множества Жюлиа, соответствующего комплексной
+     * координате 'c', которая соответствует точке {@code screenPoint} на панели.
+     * Получает текущую цветовую схему и количество итераций из {@link FractalViewModel}
+     * для инициализации вида множества Жюлиа.
      *
-     * @param screenPoint The Point on the panel where the double-click occurred.
+     * @param screenPoint Точка на панели (в экранных координатах), где произошел двойной клик.
      */
     private void openJuliaSetWindow(Point screenPoint) {
         int w = getWidth();
         int h = getHeight();
-        FractalState currentState = viewModel.getCurrentState(); // Get current state
+        FractalState currentState = viewModel.getCurrentState(); // Получаем текущее состояние
 
-        // Basic validation
+        // Проверка валидности размеров панели и состояния
         if (w <= 0 || h <= 0 || currentState == null) {
             System.err.println("Cannot open Julia Set: Panel size or state invalid.");
             JOptionPane.showMessageDialog(this,
@@ -462,11 +553,12 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
             return;
         }
 
-        // Convert screen coordinates to complex number 'c'
+        // Преобразуем экранные координаты клика в комплексное число 'c'
         ComplexNumber c = CoordinateConverter.screenToComplex(
             screenPoint.x, screenPoint.y, w, h, currentState.getViewport()
         );
 
+        // Проверка успешности конвертации
         if (c == null) {
             System.err.println("Cannot open Julia Set: Failed to convert screen coordinates.");
              JOptionPane.showMessageDialog(this,
@@ -475,52 +567,54 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
             return;
         }
 
-        // Get current settings to pass to the Julia window
+        // Получаем текущие настройки для передачи в окно Жюлиа
         ColorScheme currentScheme = currentState.getColorScheme();
         int currentIterations = currentState.getMaxIterations();
 
-        // Find the parent JFrame
+        // Находим родительское окно JFrame для позиционирования окна Жюлиа
         JFrame owner = (JFrame) SwingUtilities.getWindowAncestor(this);
         if (owner == null) {
              System.err.println("Cannot determine owner frame for Julia Set window. It will be centered on screen.");
-             // ИЗМЕНЕНО: Устанавливаем owner в null вместо создания нового JFrame.
-             // setLocationRelativeTo(null) корректно обработает этот случай.
+             // Если родительское окно не найдено, окно Жюлиа будет центрировано на экране (setLocationRelativeTo(null))
              owner = null;
         }
 
-        // Create and display the Julia window on the Event Dispatch Thread
-        final JFrame finalOwner = owner; // Final variable for use in lambda
+        // Создаем и отображаем окно Жюлиа в потоке диспетчеризации событий (EDT)
+        // Используем final переменную для лямбда-выражения
+        final JFrame finalOwner = owner;
         SwingUtilities.invokeLater(() -> {
             JuliaSetWindow juliaWindow = new JuliaSetWindow(finalOwner, c, currentScheme, currentIterations);
-            juliaWindow.display(); // Show the window
+            juliaWindow.display(); // Показываем окно
         });
     }
 
 
     /**
-     * Triggers asynchronous rendering of the fractal based on the current ViewModel state
-     * and the panel's current dimensions. Cancels any ongoing render task first.
-     * Updates the status message and requests a repaint to show the loading indicator.
+     * Инициирует асинхронный процесс рендеринга фрактала.
+     * Использует текущее состояние {@link FractalViewModel} и текущие размеры панели.
+     * Отменяет любой предыдущий незавершенный процесс рендеринга перед запуском нового.
+     * Обновляет статусное сообщение и запрашивает перерисовку панели для отображения индикатора загрузки.
      */
     public void triggerRender() {
         int width = getWidth();
         int height = getHeight();
 
-        // Skip rendering if panel is not ready or dimensions are invalid
+        // Пропускаем рендеринг, если панель не готова или имеет некорректные размеры
         if (!isShowing() || width <= 0 || height <= 0 || renderer == null) {
-            System.out.println("Skipping render: Size " + width + "x" + height + ", Showing: " + isShowing());
+            System.out.println("Skipping render: Size " + width + "x" + height + ", Showing: " + isShowing() + ", Renderer valid: " + (renderer!=null));
             statusMessage = (width <= 0 || height <= 0) ? "Panel size invalid." : "Panel not ready.";
             isRendering = false;
-            repaint(); // Repaint to show the status message
+            repaint(); // Перерисовываем, чтобы показать статусное сообщение
             return;
         }
 
         System.out.println("Triggering render for size: " + width + "x" + height);
-        isRendering = true;
-        statusMessage = "Rendering...";
-        repaint(); // Show "Rendering..." message and potentially loading indicator
+        isRendering = true; // Устанавливаем флаг рендеринга
+        statusMessage = "Rendering..."; // Обновляем статус
+        repaint(); // Перерисовываем для отображения "Rendering..." и индикатора загрузки
 
         FractalState currentState = viewModel.getCurrentState();
+        // Проверка, что состояние доступно
         if (currentState == null) {
             System.err.println("Cannot render: Current state is null.");
             statusMessage = "Error: State is null.";
@@ -529,119 +623,136 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
             return;
         }
 
-        // Call the renderer asynchronously
+        // Вызываем асинхронный метод рендерера
         renderer.render(currentState, width, height,
-                // onComplete callback
+                // Callback, вызываемый при успешном завершении рендеринга (в EDT)
                 newImage -> {
-                    isRendering = false; // Mark rendering as finished
+                    isRendering = false; // Сбрасываем флаг рендеринга
                     if (newImage != null) {
-                        this.fractalImage = newImage; // Update the image
-                        // Update status with viewport details
-                        FractalState completedState = viewModel.getCurrentState(); // Get state again in case it changed slightly
+                        this.fractalImage = newImage; // Обновляем изображение фрактала
+                        // Обновляем статусное сообщение с деталями текущего вида
+                        FractalState completedState = viewModel.getCurrentState(); // Получаем состояние на момент завершения
                         statusMessage = String.format("Ready. Viewport: X=[%.4g, %.4g], Y=[%.4g, %.4g], Iter: %d",
                                 completedState.getViewport().getMinX(), completedState.getViewport().getMaxX(),
                                 completedState.getViewport().getMinY(), completedState.getViewport().getMaxY(),
                                 completedState.getMaxIterations());
                     } else {
-                        // Handle rendering error
+                        // Обработка ошибки рендеринга
                         statusMessage = "Error during rendering.";
-                        this.fractalImage = null; // Ensure no old image is shown
+                        this.fractalImage = null; // Убираем старое изображение
                     }
-                    repaint(); // Redraw the panel with the new image or error status
+                    repaint(); // Перерисовываем панель с новым изображением или статусом ошибки
                 },
-                // onCancel callback
+                // Callback, вызываемый при отмене рендеринга (в EDT)
                 () -> {
-                    isRendering = false; // Mark rendering as finished (cancelled)
-                    FractalState cancelledState = viewModel.getCurrentState(); // Get state at cancellation time
-                    statusMessage = String.format("Cancelled. Viewport: X=[%.4g, %.4g], Y=[%.4g, %.4g], Iter: %d",
-                            cancelledState.getViewport().getMinX(), cancelledState.getViewport().getMaxX(),
-                            cancelledState.getViewport().getMinY(), cancelledState.getViewport().getMaxY(),
-                            cancelledState.getMaxIterations());
-                    // Do not clear the image, leave the partially rendered or previous one
-                    repaint(); // Update status message
+                    isRendering = false; // Сбрасываем флаг рендеринга
+                    FractalState cancelledState = viewModel.getCurrentState(); // Получаем состояние на момент отмены
+                    // Обновляем статус, указывая на отмену и параметры на тот момент
+                     if (cancelledState != null) { // Добавим проверку, вдруг состояние успело стать null
+                        statusMessage = String.format("Cancelled. Viewport: X=[%.4g, %.4g], Y=[%.4g, %.4g], Iter: %d",
+                                cancelledState.getViewport().getMinX(), cancelledState.getViewport().getMaxX(),
+                                cancelledState.getViewport().getMinY(), cancelledState.getViewport().getMaxY(),
+                                cancelledState.getMaxIterations());
+                     } else {
+                         statusMessage = "Cancelled. (State unavailable)";
+                     }
+                    // Не очищаем изображение, оставляем то, что успело отрисоваться или было до этого
+                    repaint(); // Перерисовываем для обновления статусного сообщения
                 }
         );
     }
 
     /**
-     * Paints the component. Draws the background, the fractal image (or status message),
-     * the loading indicator if rendering, and the zoom selection rectangle.
+     * Отрисовывает содержимое компонента.
+     * Вызывается системой Swing при необходимости перерисовки панели (например, после вызова repaint()).
+     * Рисует фон, затем актуальное изображение фрактала (если доступно) или статусное сообщение.
+     * Если идет рендеринг, поверх рисуется индикатор загрузки.
+     * Также рисует прямоугольник выделения для зума, если пользователь его рисует.
      *
-     * @param g The Graphics context to paint on.
+     * @param g Графический контекст для отрисовки.
      */
     @Override
     protected void paintComponent(Graphics g) {
-        super.paintComponent(g); // Paint background
+        super.paintComponent(g); // Отрисовка фона панели
 
-        // Get current state atomically
+        // Атомарно получаем текущие значения volatile переменных
         BufferedImage currentImage = this.fractalImage;
         boolean renderingNow = this.isRendering;
         String currentStatus = this.statusMessage;
 
-        // Draw the fractal image or a status message if image is null
+        // Рисуем изображение фрактала, если оно есть
         if (currentImage != null) {
             g.drawImage(currentImage, 0, 0, this);
         } else {
-            // Draw status message centered if no image
-            g.setColor(Color.DARK_GRAY); // Use a less bright color for background text
-            g.fillRect(0,0, getWidth(), getHeight()); // Fill background to obscure artifacts
-            g.setColor(Color.WHITE);
+            // Если изображения нет, рисуем фон и статусное сообщение по центру
+            g.setColor(Color.DARK_GRAY); // Цвет фона для текста
+            g.fillRect(0, 0, getWidth(), getHeight()); // Заливаем фон, чтобы скрыть возможные артефакты
+            g.setColor(Color.WHITE); // Цвет текста
             g.setFont(new Font("SansSerif", Font.PLAIN, 16));
             FontMetrics fm = g.getFontMetrics();
             String message = currentStatus != null ? currentStatus : "Status unavailable";
             int stringWidth = fm.stringWidth(message);
             int stringAscent = fm.getAscent();
+            // Центрируем текст по горизонтали и вертикали
             int x = (getWidth() - stringWidth) / 2;
-            int y = (getHeight() + stringAscent) / 2 - fm.getDescent(); // Center vertically
+            int y = (getHeight() - stringAscent) / 2 + fm.getAscent(); // Более точное центрирование по вертикали
             g.drawString(message, x, y);
         }
 
-        // Draw loading indicator overlay if rendering is in progress
+        // Рисуем индикатор загрузки поверх всего, если идет рендеринг
         if (renderingNow) {
             drawLoadingIndicator(g);
         }
 
-        // Draw the zoom selection rectangle (if user is dragging)
+        // Рисуем прямоугольник выделения для зума (если пользователь тянет мышь)
+        // Метод drawSelectionRectangle сам проверит, нужно ли рисовать
         zoomListener.drawSelectionRectangle(g);
     }
 
     /**
-     * Draws a semi-transparent overlay with "Rendering..." text
-     * to indicate background processing.
+     * Отрисовывает индикатор загрузки: полупрозрачный прямоугольник с текстом "Rendering...".
      *
-     * @param g The Graphics context to draw on.
+     * @param g Графический контекст для отрисовки.
      */
     private void drawLoadingIndicator(Graphics g) {
-        // Semi-transparent black overlay
-        g.setColor(new Color(0, 0, 0, 150)); // Black with alpha
-        g.fillRect(0, getHeight() / 2 - 20, getWidth(), 40); // Centered vertically
+        // Сохраняем текущие настройки Graphics
+        Graphics2D g2d = (Graphics2D) g.create();
+        try {
+            // Полупрозрачный черный фон для индикатора
+            g2d.setColor(new Color(0, 0, 0, 150)); // Черный с альфа-каналом
+            int indicatorHeight = 40;
+            int indicatorY = getHeight() / 2 - indicatorHeight / 2; // Центрируем по вертикали
+            g2d.fillRect(0, indicatorY, getWidth(), indicatorHeight);
 
-        // White text on the overlay
-        g.setColor(Color.WHITE);
-        g.setFont(new Font("SansSerif", Font.BOLD, 18));
-        FontMetrics fm = g.getFontMetrics();
-        String loadingText = "Rendering...";
-        int stringWidth = fm.stringWidth(loadingText);
-        int stringAscent = fm.getAscent();
-        // Center text horizontally and vertically within the overlay rect
-        int x = (getWidth() - stringWidth) / 2;
-        int y = (getHeight() + stringAscent) / 2 - fm.getDescent();
-        g.drawString(loadingText, x, y);
+            // Текст "Rendering..." белым цветом
+            g2d.setColor(Color.WHITE);
+            g2d.setFont(new Font("SansSerif", Font.BOLD, 18));
+            FontMetrics fm = g2d.getFontMetrics();
+            String loadingText = "Rendering...";
+            int stringWidth = fm.stringWidth(loadingText);
+            // Центрируем текст внутри прямоугольника индикатора
+            int textX = (getWidth() - stringWidth) / 2;
+            int textY = indicatorY + (indicatorHeight - fm.getHeight()) / 2 + fm.getAscent();
+            g2d.drawString(loadingText, textX, textY);
+        } finally {
+            g2d.dispose(); // Восстанавливаем исходные настройки Graphics
+        }
     }
 
     /**
-     * Listens for property changes from the ViewModel.
-     * Specifically triggers a re-render when the {@code FractalViewModel.PROPERTY_STATE} changes.
+     * Обрабатывает события изменения свойств, поступающие от {@link FractalViewModel}.
+     * Реагирует на изменение свойства {@code FractalViewModel.PROPERTY_STATE},
+     * запуская перерисовку фрактала {@link #triggerRender()}.
      *
-     * @param evt The PropertyChangeEvent object.
+     * @param evt Событие изменения свойства {@link PropertyChangeEvent}.
      */
     @Override
     public void propertyChange(PropertyChangeEvent evt) {
-        // Check if the fractal state property has changed
+        // Проверяем, изменилось ли свойство состояния фрактала
         if (FractalViewModel.PROPERTY_STATE.equals(evt.getPropertyName())) {
             System.out.println("FractalPanel received state update. Triggering render.");
-            // Ensure rendering happens on the EDT if state change wasn't triggered by user interaction
-            // Though triggerRender itself is safe, direct calls following state changes might benefit
+            // Запускаем рендеринг. Если мы уже в EDT, вызываем напрямую,
+            // иначе - через invokeLater для безопасности Swing.
              if (SwingUtilities.isEventDispatchThread()) {
                  triggerRender();
              } else {
@@ -651,25 +762,28 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
     }
 
     /**
-     * Specifies the preferred size for this panel.
-     * Used by layout managers.
+     * Возвращает предпочтительный размер для этой панели.
+     * Используется менеджерами компоновки Swing.
      *
-     * @return The preferred dimension (800x600).
+     * @return Рекомендуемый размер {@link Dimension} (800x600).
      */
     @Override
     public Dimension getPreferredSize() {
+        // Задаем стандартный начальный размер
         return new Dimension(800, 600);
     }
 
     /**
-     * Gets the currently displayed fractal image.
-     * This can be used, for example, for saving the image.
-     * Returns a volatile read of the image buffer.
+     * Возвращает текущее отображаемое (или только что отрисованное) изображение фрактала.
+     * Может быть использовано, например, для сохранения изображения в файл.
+     * Выполняет volatile чтение поля {@code fractalImage}.
      *
-     * @return The current BufferedImage, or null if not yet rendered or if rendering failed.
+     * @return Текущий {@link BufferedImage}, или {@code null}, если изображение еще не
+     *         отрисовано или произошла ошибка рендеринга.
      */
     public BufferedImage getCurrentImage() {
-        return this.fractalImage; // Return the volatile reference
+        // Возвращаем volatile ссылку на текущее изображение
+        return this.fractalImage;
     }
 }
 
@@ -686,6 +800,7 @@ import model.Viewport;
 import render.FractalRenderer;
 import utils.ComplexNumber;
 import viewmodel.FractalViewModel;
+import services.FileService; // Импорт для возможного меню сохранения
 
 import javax.swing.*;
 import java.awt.*;
@@ -693,84 +808,144 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
 /**
- * Окно для отображения множества Жюлиа, связанного с точкой 'c'
- * из множества Мандельброта.
+ * Окно JFrame, предназначенное для отображения множества Жюлиа.
+ * Множество Жюлиа определяется комплексным параметром 'c', который обычно
+ * соответствует точке, выбранной пользователем в основном окне множества Мандельброта.
+ * Использует собственные экземпляры {@link FractalViewModel} и {@link FractalRenderer}.
  */
 public class JuliaSetWindow extends JFrame {
 
+    /** Независимый ViewModel для управления состоянием этого окна Жюлиа. */
     private final FractalViewModel viewModel;
+    /** Независимый рендерер для отрисовки множества Жюлиа в этом окне. */
     private final FractalRenderer renderer;
+    /** Панель для отрисовки фрактала Жюлиа, использующая свои viewModel и renderer. */
     private final FractalPanel fractalPanel;
-    private final ComplexNumber c; // Параметр для этого множества Жюлиа
+    /**
+     * Комплексный параметр 'c', определяющий конкретное множество Жюлиа,
+     * отображаемое в этом окне. Является константой для {@link JuliaFunction}.
+     */
+    private final ComplexNumber c;
 
     /**
-     * Создает окно для отображения множества Жюлиа.
+     * Создает новое окно для отображения множества Жюлиа.
+     * Инициализирует независимые компоненты рендеринга и управления состоянием.
+     * Устанавливает начальное состояние (viewport, итерации, схема) на основе
+     * параметров, переданных из основного окна.
      *
-     * @param ownerFrame       Родительское окно (для позиционирования).
-     * @param c                Параметр 'c' для множества Жюлиа.
-     * @param initialColorScheme Начальная цветовая схема (берется из основного окна).
-     * @param initialIterations Начальное количество итераций (берется из основного окна).
+     * @param ownerFrame       Родительское окно (обычно {@link MainFrame}), используется
+     *                         для позиционирования этого окна. Может быть null.
+     * @param c                Комплексный параметр 'c' для функции множества Жюлиа {@link JuliaFunction}. Не может быть null.
+     * @param initialColorScheme Начальная цветовая схема, унаследованная из основного окна. Не может быть null.
+     * @param initialIterations Начальное максимальное количество итераций, унаследованное из основного окна. Должно быть > 0.
      */
     public JuliaSetWindow(JFrame ownerFrame, ComplexNumber c, ColorScheme initialColorScheme, int initialIterations) {
-        super("Julia Set Explorer (c = " + String.format("%.4f %s %.4fi", c.getReal(), c.getImaginary() >= 0 ? "+" : "-", Math.abs(c.getImaginary())) + ")"); // Заголовок окна
+        // Формируем заголовок окна, отображающий значение 'c'
+        super("Julia Set Explorer (c = " + String.format("%.4f %s %.4fi",
+                c.getReal(), c.getImaginary() >= 0 ? "+" : "-", Math.abs(c.getImaginary())) + ")");
         this.c = c;
 
-        // Создаем СВОИ экземпляры рендерера и ViewModel для этого окна
-        this.renderer = new FractalRenderer(); // Независимый рендерер
-        this.viewModel = new FractalViewModel(renderer); // Независимый ViewModel
+        // Создаем НЕЗАВИСИМЫЕ экземпляры рендерера и ViewModel для этого окна
+        this.renderer = new FractalRenderer();
+        this.viewModel = new FractalViewModel(renderer);
 
-        // Создаем начальное состояние для Жюлиа
+        // Создаем начальное состояние специально для множества Жюлиа
         FractalState juliaState = createInitialJuliaState(c, initialColorScheme, initialIterations);
-        this.viewModel.loadState(juliaState); // Загружаем начальное состояние (сбросит undo)
+        // Загружаем это состояние в ViewModel окна Жюлиа. Это сбрасывает историю Undo.
+        this.viewModel.loadState(juliaState);
 
-        // Создаем панель отрисовки
+        // Создаем панель отрисовки, передавая ей НЕЗАВИСИМЫЕ viewModel и renderer
         this.fractalPanel = new FractalPanel(viewModel, renderer);
 
         // Настройка окна
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE); // Закрывать только это окно
-        setSize(600, 500); // Начальный размер
-        setLocationRelativeTo(ownerFrame); // Позиционировать относительно главного окна
-        setLayout(new BorderLayout());
-        add(fractalPanel, BorderLayout.CENTER);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE); // Закрывать только это окно, не всё приложение
+        setSize(600, 500);                                // Начальный размер окна
+        setLocationRelativeTo(ownerFrame);                // Позиционировать относительно родительского окна (или по центру экрана, если ownerFrame == null)
+        setLayout(new BorderLayout());                    // Используем BorderLayout
+        add(fractalPanel, BorderLayout.CENTER);           // Добавляем панель отрисовки в центр
 
-        // Добавляем Listener для остановки рендерера при закрытии окна
+        // Добавляем слушатель для корректного завершения работы рендерера при закрытии окна
         addWindowListener(new WindowAdapter() {
+            /**
+             * Вызывается перед закрытием окна. Останавливает потоки рендерера,
+             * связанного с этим окном, чтобы предотвратить утечку ресурсов.
+             * @param e Событие окна.
+             */
             @Override
             public void windowClosing(WindowEvent e) {
                 System.out.println("Shutting down Julia set renderer...");
-                renderer.shutdown(); // Останавливаем потоки рендерера этого окна
-                System.out.println("Julia set renderer shut down.");
+                // Останавливаем ExecutorService рендерера этого окна
+                renderer.shutdown();
+                System.out.println("Julia set renderer shut down for c=" + JuliaSetWindow.this.c);
             }
         });
 
-         // Можно добавить простое меню (например, только Save Image) или не добавлять меню вовсе
-         // MenuBar juliaMenuBar = new MenuBar(viewModel, new FileService(), fractalPanel, this);
-         // setJMenuBar(juliaMenuBar); // Опционально
+        // Опционально: можно добавить собственное меню для окна Жюлиа
+        // Например, только для сохранения изображения
+        // MenuBar juliaMenuBar = createJuliaMenuBar();
+        // setJMenuBar(juliaMenuBar);
 
         System.out.println("Julia Set window created for c = " + c);
     }
 
     /**
-     * Создает начальное состояние для множества Жюлиа.
+     * Создает начальный объект {@link FractalState} для отображения множества Жюлиа.
+     * Устанавливает viewport по умолчанию для Жюлиа (обычно [-2, 2] x [-2, 2]),
+     * использует переданные цветовую схему и количество итераций, и создает
+     * экземпляр {@link JuliaFunction} с заданным параметром 'c'.
      *
-     * @param cParam           Параметр 'c'.
-     * @param colorScheme      Цветовая схема.
-     * @param maxIterations    Максимум итераций.
-     * @return Начальное FractalState для множества Жюлиа.
+     * @param cParam           Параметр 'c' для {@link JuliaFunction}.
+     * @param colorScheme      Цветовая схема для рендеринга.
+     * @param maxIterations    Максимальное количество итераций.
+     * @return Начальное состояние {@link FractalState} для окна Жюлиа.
      */
     private FractalState createInitialJuliaState(ComplexNumber cParam, ColorScheme colorScheme, int maxIterations) {
-        // Viewport по умолчанию для множества Жюлиа (часто [-2, 2] x [-2, 2])
+        // Стандартная область просмотра для большинства множеств Жюлиа
         Viewport juliaViewport = new Viewport(-2.0, 2.0, -2.0, 2.0);
-        // Создаем функцию Жюлиа с нашим параметром 'c'
+        // Создаем функцию расчета итераций для множества Жюлиа с нашим параметром 'c'
         FractalFunction juliaFunction = new JuliaFunction(cParam);
 
+        // Создаем объект состояния
         return new FractalState(juliaViewport, maxIterations, colorScheme, juliaFunction);
     }
 
-    // Метод для показа окна (вызывается извне)
+    // Опционально: Метод для создания упрощенного меню для окна Жюлиа
+    /*
+    private MenuBar createJuliaMenuBar() {
+        // Создаем FileService локально или получаем извне, если нужно
+        FileService localFileService = new FileService();
+        // Создаем MenuBar, передавая *локальные* viewModel, fractalPanel и это окно (this)
+        MenuBar juliaMenu = new MenuBar(this.viewModel, localFileService, this.fractalPanel, this);
+
+        // Удаляем ненужные пункты меню (например, Load State, Edit->Undo, View->Scheme/Iterations)
+        // Меню File (индекс 0)
+        JMenu fileMenu = juliaMenu.getMenu(0);
+        if (fileMenu != null) {
+            // Удаляем Load, Save State, Separator, Exit (оставляем только Save As Image)
+             if (fileMenu.getItemCount() > 2) fileMenu.remove(0); // Load
+             if (fileMenu.getItemCount() > 2) fileMenu.remove(0); // Save State (из Save As)
+             if (fileMenu.getItemCount() > 1) fileMenu.remove(1); // Separator
+             if (fileMenu.getItemCount() > 1) fileMenu.remove(1); // Exit
+        }
+        // Удаляем меню Edit (индекс 1)
+        if (juliaMenu.getMenuCount() > 1) juliaMenu.remove(1);
+        // Удаляем меню View (индекс 1 после удаления Edit)
+        if (juliaMenu.getMenuCount() > 1) juliaMenu.remove(1);
+
+        return juliaMenu;
+    }
+    */
+
+
+    /**
+     * Делает окно множества Жюлиа видимым.
+     * После вызова этого метода панель {@link FractalPanel} получит события
+     * {@code componentShown} или {@code componentResized}, что инициирует
+     * первый запуск рендеринга.
+     */
     public void display() {
         setVisible(true);
-        // Первый рендер запустится панелью при изменении размера или первом показе
+        // Первый рендер запустится автоматически панелью FractalPanel
     }
 }
 
@@ -788,35 +963,58 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
 /**
- * The main application window for the Mandelbrot Set Explorer.
+ * Главное окно приложения "Mandelbrot Set Explorer".
+ * Содержит основную панель для отрисовки фрактала ({@link FractalPanel})
+ * и главное меню ({@link MenuBar}). Инициализирует ключевые компоненты
+ * архитектуры: {@link FractalViewModel}, {@link FractalRenderer}, {@link FileService}.
+ * Обрабатывает событие закрытия окна для корректного завершения работы.
  */
 public class MainFrame extends JFrame {
 
+    /** ViewModel, управляющая состоянием фрактала Мандельброта. */
     private final FractalViewModel viewModel;
+    /** Рендерер, отвечающий за вычисление и отрисовку фрактала. */
     private final FractalRenderer renderer;
+    /** Сервис для операций с файлами (сохранение/загрузка состояния и изображений). */
     private final FileService fileService;
+    /** Панель, отображающая фрактал и обрабатывающая ввод пользователя. */
     private final FractalPanel fractalPanel;
 
     /**
-     * Constructs the main application frame.
+     * Конструирует главное окно приложения.
+     * Инициализирует ViewModel, Renderer, FileService, FractalPanel и MenuBar.
+     * Настраивает основные параметры окна (заголовок, операция закрытия по умолчанию,
+     * расположение) и добавляет слушатель для обработки закрытия окна.
      */
     public MainFrame() {
+        // Инициализация основных компонентов
         renderer = new FractalRenderer();
-        viewModel = new FractalViewModel(renderer);
+        viewModel = new FractalViewModel(renderer); // ViewModel для Мандельброта
         fileService = new FileService();
 
+        // Настройка окна
         setTitle("Mandelbrot Set Explorer");
+        // Устанавливаем DO_NOTHING_ON_CLOSE, чтобы обработать закрытие в windowClosing
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        setLocationRelativeTo(null);
+        setLocationRelativeTo(null); // Центрировать окно на экране
 
-        fractalPanel = new FractalPanel(viewModel, renderer);
+        // Создание и настройка компонентов GUI
+        fractalPanel = new FractalPanel(viewModel, renderer); // Панель для Мандельброта
         MenuBar menuBar = new MenuBar(viewModel, fileService, fractalPanel, this);
 
+        // Сборка интерфейса
         setJMenuBar(menuBar);
-        add(fractalPanel, BorderLayout.CENTER);
-        pack();
+        add(fractalPanel, BorderLayout.CENTER); // Добавляем панель в центр окна
+        pack(); // Устанавливает размер окна на основе предпочтительных размеров компонентов
 
+        // Добавляем слушатель для обработки события закрытия окна
         addWindowListener(new WindowAdapter() {
+            /**
+             * Вызывается, когда пользователь пытается закрыть окно (нажимает крестик).
+             * Вызывает метод {@link #handleWindowClose()} для подтверждения
+             * и корректного завершения работы.
+             * @param e Событие окна.
+             */
             @Override
             public void windowClosing(WindowEvent e) {
                 handleWindowClose();
@@ -825,39 +1023,56 @@ public class MainFrame extends JFrame {
     }
 
     /**
-     * Handles window closing with a confirmation dialog.
+     * Обрабатывает попытку закрытия главного окна.
+     * Показывает диалог подтверждения. Если пользователь подтверждает выход,
+     * останавливает потоки рендерера, освобождает ресурсы окна и завершает приложение.
      */
     private void handleWindowClose() {
+        // Показываем диалог подтверждения
         int confirmation = JOptionPane.showConfirmDialog(
-                this, "Are you sure you want to exit?", "Confirm Exit",
-                JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+                this, // Родительский компонент для диалога
+                "Are you sure you want to exit?", // Сообщение
+                "Confirm Exit", // Заголовок диалога
+                JOptionPane.YES_NO_OPTION, // Кнопки Да/Нет
+                JOptionPane.QUESTION_MESSAGE // Иконка вопроса
+        );
 
+        // Если пользователь нажал "Да"
         if (confirmation == JOptionPane.YES_OPTION) {
             System.out.println("Shutting down renderer...");
+            // Корректно останавливаем ExecutorService рендерера
             renderer.shutdown();
             System.out.println("Exiting application.");
+            // Освобождаем ресурсы окна
             dispose();
+            // Завершаем работу JVM
             System.exit(0);
         }
+        // Если пользователь нажал "Нет", ничего не делаем, окно остается открытым
     }
 
     /**
-     * Main entry point for the application.
+     * Главный метод, точка входа в приложение.
+     * Устанавливает системный Look and Feel для нативного вида интерфейса
+     * и запускает создание и отображение главного окна в потоке
+     * диспетчеризации событий Swing (EDT).
      *
-     * @param args Command line arguments (unused).
+     * @param args Аргументы командной строки (не используются).
      */
     public static void main(String[] args) {
-        // Set the system look and feel for a native appearance
+        // Попытка установить системный стиль интерфейса для лучшего внешнего вида
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {
-            System.err.println("Couldn't set system look and feel.");
+            // В случае ошибки просто выводим сообщение, приложение продолжит работу со стилем по умолчанию
+            System.err.println("Couldn't set system look and feel: " + e.getMessage());
         }
 
-        // Launch the application on the Event Dispatch Thread (EDT)
+        // Запускаем создание и отображение GUI в потоке диспетчеризации событий (EDT)
+        // Это стандартная практика для работы со Swing для обеспечения потокобезопасности
         SwingUtilities.invokeLater(() -> {
             MainFrame frame = new MainFrame();
-            frame.setVisible(true);
+            frame.setVisible(true); // Делаем окно видимым
         });
     }
 }
@@ -1062,7 +1277,6 @@ public class MouseZoomListener extends MouseAdapter implements MouseMotionListen
 package model;
 
 import java.awt.Color;
-import java.util.Objects; // Импорт для hashCode
 
 /**
  * Простая цветовая схема в оттенках серого.
@@ -1305,7 +1519,6 @@ public final class FractalState implements Serializable {
 package model;
 
 import java.awt.Color;
-import java.util.Objects; // Импорт для hashCode
 
 /**
  * Пример нелинейной цветовой схемы RGB.
@@ -1737,141 +1950,70 @@ package math;
 
 import utils.ComplexNumber;
 import java.util.Objects;
-// Serializable уже есть в FractalFunction, но явно указать не помешает
 
 /**
- * Реализация {@link FractalFunction} для множества Жюлиа.
- * Формула итерации: z_{n+1} = z_n^2 + c, где 'c' - константа для данного
- * множества Жюлиа, а z0 - начальная точка на комплексной плоскости (обычно
- * соответствующая пикселю на экране).
- * Этот класс является неизменяемым (immutable) и потокобезопасным.
+ * Реализация FractalFunction для множеств Жюлиа.
+ * Формула итерации: z_{n+1} = z_n^2 + c, где z0 - точка плоскости, а c - константа.
  */
-public final class JuliaFunction implements FractalFunction { // Объявлен final для гарантии неизменяемости
-
+public class JuliaFunction implements FractalFunction {
     /**
-     * Версия для сериализации. Уникальна для этого класса.
-     * Изменена для отражения потенциальных изменений в классе (например, добавление поля 'c').
+     * Версия для сериализации.
      */
-    private static final long serialVersionUID = 2L; // Отличается от MandelbrotFunction
+    private static final long serialVersionUID = 1L;
 
     /**
-     * Константный параметр 'c', определяющий конкретное множество Жюлиа.
-     * Этот параметр остается неизменным в процессе вычисления итераций
-     * для разных точек z0.
+     * Константный параметр 'c' для данного множества Жюлиа.
      */
     private final ComplexNumber c;
 
     /**
-     * Создает экземпляр функции для множества Жюлиа с заданным параметром 'c'.
-     *
-     * @param c Константное комплексное число, определяющее форму множества Жюлиа.
-     *          Не должно быть null.
-     * @throws NullPointerException если параметр c равен null.
+     * Создает функцию для множества Жюлиа с заданным параметром c.
+     * @param c Комплексный параметр 'c'. Не может быть null.
      */
     public JuliaFunction(ComplexNumber c) {
-        this.c = Objects.requireNonNull(c, "Параметр 'c' для множества Жюлиа не может быть null");
+        this.c = Objects.requireNonNull(c, "Параметр 'c' не может быть null");
     }
 
     /**
      * {@inheritDoc}
-     * <p>
-     * Вычисляет количество итераций по формуле z_{n+1} = z_n^2 + c.
-     * </p><p>
-     * <b>Важно:</b> В этой реализации параметр {@code cParam} из аргументов метода
-     * <i>игнорируется</i>. Вместо него используется константа {@code this.c},
-     * которая была передана в конструктор {@link JuliaFunction}.
-     * Параметр {@code z0} используется как начальное значение итерации z.
-     * </p>
-     *
-     * @param z0            Начальная точка итерации (комплексное число для проверки). Не должно быть null.
-     * @param cParam        <i>Игнорируется в этой реализации.</i> Используется {@code this.c}.
-     * @param maxIterations Максимальное количество итераций. Должно быть положительным.
-     * @return Количество итераций до выхода за радиус 2, или maxIterations, если точка внутри.
-     * @throws NullPointerException если z0 равен null.
+     * Для множества Жюлиа начальное значение z равно проверяемой точке (z0),
+     * а параметр 'c' является константой, заданной при создании функции.
      */
     @Override
-    public int calculateIterations(ComplexNumber z0, ComplexNumber cParam, int maxIterations) {
-        Objects.requireNonNull(z0, "Начальная точка z0 не может быть null");
-        // maxIterations > 0 проверяется в FractalState или в вызывающем коде (например, Renderer)
-
-        // Начальное значение z берем из аргумента z0
+    public int calculateIterations(ComplexNumber z0, ComplexNumber cIgnored, int maxIterations) {
+        // z начинается с точки z0
         ComplexNumber z = z0;
-        // Константу c берем из поля класса (this.c), игнорируя cParam
+        // c - это константа, хранящаяся в поле this.c
 
         for (int i = 0; i < maxIterations; ++i) {
-            // Проверка выхода за радиус 2 (используем квадрат модуля для оптимизации)
-            // 4.0 - константа, соответствующая радиусу 2
-            if (z.magnitudeSquared() > 4.0) {
-                return i; // Точка вне множества
+            if (z.magnitudeSquared() > 4.0) { // Порог обычно 4
+                return i;
             }
-            // Итерация: z = z^2 + c (используем this.c)
+            // Итерация: z = z^2 + this.c
             z = z.square().add(this.c);
         }
-        // Если цикл завершился, точка считается принадлежащей множеству
         return maxIterations;
     }
 
-    /**
-     * {@inheritDoc}
-     * Возвращает имя "Julia Set".
-     * @return Строка "Julia Set".
-     */
     @Override
     public String getName() {
-        // Можно добавить значение c в имя для отладки, но согласно ТЗ лучше оставить общим
-        // return "Julia Set (c=" + c + ")";
-        return "Julia Set";
+        return "Julia Set (c=" + c.toString() + ")"; // Включаем параметр 'c' в имя
     }
 
-    /**
-     * Возвращает константный параметр 'c', определяющий это множество Жюлиа.
-     * @return Неизменяемое комплексное число 'c'.
-     */
-    public ComplexNumber getC() {
-        return c; // Возвращаем ссылку на неизменяемый объект
-    }
-
-    /**
-     * Сравнивает эту функцию Жюлиа с другим объектом.
-     * Две функции {@code JuliaFunction} равны, если равны их параметры 'c'.
-     *
-     * @param o Объект для сравнения.
-     * @return {@code true}, если {@code o} является {@code JuliaFunction} с тем же параметром 'c', иначе {@code false}.
-     */
+    // Важно переопределить equals/hashCode, если состояния с разными
+    // JuliaFunction должны считаться разными (например, для сохранения/загрузки)
+    // Сравниваем по значению параметра 'c'.
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        // Проверка instanceof предпочтительнее getClass() != o.getClass() для совместимости с подклассами,
-        // но так как класс final, можно использовать и getClass().
         if (o == null || getClass() != o.getClass()) return false;
         JuliaFunction that = (JuliaFunction) o;
-        // Сравнение по значению параметра 'c' с использованием Objects.equals для null-безопасности
-        // (хотя конструктор не допускает null, это хорошая практика)
-        return Objects.equals(c, that.c);
+        return Objects.equals(c, that.c); // Сравнение по 'c'
     }
 
-    /**
-     * Вычисляет хэш-код для этой функции Жюлиа.
-     * Основан на хэш-коде параметра 'c'.
-     *
-     * @return Хэш-код объекта.
-     */
     @Override
     public int hashCode() {
-        // Хэш-код зависит только от параметра 'c'
-        return Objects.hash(c);
-    }
-
-    /**
-     * Возвращает строковое представление функции Жюлиа, включая параметр 'c'.
-     * @return Строковое представление.
-     */
-    @Override
-    public String toString() {
-        // Используем имя класса и значение поля 'c' для информативности
-        return "JuliaFunction{" +
-                "c=" + c +
-                '}';
+        return Objects.hash(c); // Хэш-код на основе 'c'
     }
 }
 
@@ -1986,7 +2128,6 @@ public class CoordinateConverter {
         double imaginary = viewport.getMaxY() - proportionY * viewport.getHeight();
 
         return new ComplexNumber(real, imaginary);
-
         /* --- Пример использования внешнего класса из JAR ---
            try {
                // Адаптируйте вызов под API вашего конвертера
@@ -3206,7 +3347,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import javax.swing.*; // Для SwingUtilities
 
 
 

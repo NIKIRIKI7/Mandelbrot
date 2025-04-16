@@ -1,7 +1,9 @@
+// File: core/src/main/java/viewmodel/FractalViewModel.java
 package viewmodel;
 
 import model.ColorScheme;
 import model.FractalState;
+import model.Viewport; // Для констант и использования в методах
 import render.FractalRenderer;
 import viewmodel.commands.Command;
 import viewmodel.commands.PanCommand;
@@ -9,262 +11,399 @@ import viewmodel.commands.UndoManager;
 import viewmodel.commands.ZoomCommand;
 import utils.CoordinateConverter;
 import utils.ComplexNumber;
-import model.Viewport; // Для DEFAULT_VIEWPORT
-
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.util.Objects;
 
 /**
- * ViewModel for the Mandelbrot fractal visualization.
- * Manages the FractalState, handles user actions via Commands,
- * and interacts with the Renderer to update the view.
+ * ViewModel (согласно паттерну MVVM) для управления состоянием и логикой
+ * визуализации фрактала.
+ * <p>
+ * Обязанности:
+ * <ul>
+ *     <li>Хранит текущее состояние фрактала ({@link FractalState}).</li>
+ *     <li>Предоставляет методы для изменения состояния (зум, панорамирование, смена схемы, итераций),
+ *         используя паттерн Команда ({@link Command}) для поддержки отмены действий (Undo).</li>
+ *     <li>Управляет историей команд через {@link UndoManager}.</li>
+ *     <li>Уведомляет подписчиков (обычно View) об изменениях состояния через {@link PropertyChangeSupport}.</li>
+ *     <li>Взаимодействует с {@link CoordinateConverter} для преобразования экранных координат в комплексные.</li>
+ * </ul>
+ * </p><p>
+ * Не занимается непосредственно рендерингом (это задача {@link FractalRenderer}, который обычно
+ * вызывается из View компонента {@link view.FractalPanel} при получении уведомления об изменении состояния).
+ * </p>
  */
 public class FractalViewModel {
 
+    /**
+     * Имя свойства для события изменения состояния фрактала ({@link FractalState}).
+     * Слушатели могут отслеживать это свойство для обновления отображения.
+     * Значение события: {@code (oldState, newState)}.
+     */
     public static final String PROPERTY_STATE = "fractalState";
+    /**
+     * Имя свойства для события изменения возможности отмены последнего действия.
+     * Используется для включения/выключения элементов UI (например, пункта меню "Undo").
+     * Значение события: {@code (oldCanUndo, newCanUndo)} (тип Boolean).
+     */
     public static final String PROPERTY_CAN_UNDO = "canUndo";
 
+    /** Текущее неизменяемое состояние фрактала. */
     private FractalState currentState;
+    /** Механизм поддержки слушателей PropertyChange для уведомления View. */
     private final PropertyChangeSupport support = new PropertyChangeSupport(this);
-    private final UndoManager undoManager = new UndoManager(100);
+    /** Менеджер для хранения истории команд и выполнения отмены (Undo). */
+    private final UndoManager undoManager; // = new UndoManager(100); Инициализируется в конструкторе
+    /** Ссылка на рендерер (может не использоваться напрямую, но передается по архитектуре). */
     private final FractalRenderer renderer; // Renderer теперь не используется напрямую для вызова render
-    // Константы для динамических итераций
-    private static final double DEFAULT_VIEWPORT_WIDTH = Viewport.DEFAULT_VIEWPORT.getWidth(); // Ширина viewport по умолчанию
-    private static final double ITERATION_ZOOM_FACTOR = 30.0; // Коэффициент масштабирования итераций (подбирается экспериментально)
-    private static final int MIN_ITERATIONS = 50; // Минимальное количество итераций
+
+    /** Базовое количество итераций для расчета при зуме. */
+    private static final int BASE_ITERATIONS_FOR_ZOOM = 50; // Было MIN_ITERATIONS
+    /** Коэффициент, определяющий, насколько быстро растут итерации при зуме. */
+    private static final double ITERATION_ZOOM_SENSITIVITY = 40.0; // Было ITERATION_ZOOM_FACTOR
+
 
     /**
-     * Constructs the ViewModel with a default state.
-     * The renderer is now primarily used by the View (FractalPanel),
-     * but might be needed here if ViewModel initiated rendering directly.
+     * Создает ViewModel с начальным состоянием фрактала по умолчанию
+     * и заданным максимальным размером истории отмены.
      *
-     * @param renderer The renderer (potentially unused here directly, but required by architecture).
+     * @param renderer Экземпляр {@link FractalRenderer}. Хотя ViewModel может не вызывать его методы
+     *                 напрямую, он передается для соответствия архитектуре и потенциального использования.
+     *                 Не может быть null.
+     * @param undoHistorySize Максимальное количество шагов для отмены. Должно быть > 0.
+     * @throws NullPointerException если {@code renderer} равен null.
+     * @throws IllegalArgumentException если {@code undoHistorySize <= 0}.
      */
-    public FractalViewModel(FractalRenderer renderer) { // Renderer может и не понадобиться здесь
-        this.renderer = Objects.requireNonNull(renderer, "Renderer cannot be null"); // Пока оставим
-        // Используем статический фабричный метод, который уже создает состояние с MandelbrotFunction
+    public FractalViewModel(FractalRenderer renderer, int undoHistorySize) {
+        this.renderer = Objects.requireNonNull(renderer, "Renderer не может быть null");
+        if (undoHistorySize <= 0) {
+             throw new IllegalArgumentException("Размер истории Undo должен быть положительным.");
+        }
+        this.undoManager = new UndoManager(undoHistorySize);
+        // Используем статический фабричный метод для создания состояния Мандельброта по умолчанию
         this.currentState = FractalState.createDefault();
-        // Уведомление о начальном состоянии не обязательно здесь, панель запросит рендер при показе
-        // support.firePropertyChange(PROPERTY_STATE, null, this.currentState);
-   }
+        // Уведомление о начальном состоянии не требуется здесь,
+        // View (FractalPanel) запросит рендер при первом отображении/изменении размера.
+    }
+
     /**
-     * Gets the current fractal state.
+     * Альтернативный конструктор с размером истории отмены по умолчанию (100 шагов).
+     * @param renderer Экземпляр {@link FractalRenderer}. Не может быть null.
+     */
+     public FractalViewModel(FractalRenderer renderer) {
+         this(renderer, 100); // Используем значение по умолчанию 100
+     }
+
+
+    /**
+     * Возвращает текущее состояние фрактала.
      *
-     * @return The current FractalState.
+     * @return Неизменяемый объект {@link FractalState}, представляющий текущий вид.
      */
     public FractalState getCurrentState() {
         return currentState;
     }
 
     /**
-     * Gets the undo manager for testing or external use.
+     * Возвращает менеджер отмены {@link UndoManager}.
+     * Может использоваться View для проверки возможности отмены ({@code undoManager.canUndo()})
+     * или для тестирования.
      *
-     * @return The UndoManager instance.
+     * @return Экземпляр {@link UndoManager}.
      */
     public UndoManager getUndoManager() {
         return undoManager;
     }
 
     /**
-     * Loads a new FractalState, typically from a file, clears the undo history,
-     * and notifies listeners.
+     * Загружает новое состояние фрактала ({@code newState}).
+     * Обычно используется при загрузке состояния из файла.
+     * <p>
+     * При загрузке нового состояния происходит следующее:
+     * <ul>
+     *     <li>Текущее состояние заменяется на {@code newState}.</li>
+     *     <li>История отмены (Undo) полностью очищается.</li>
+     *     <li>Генерируются события {@link #PROPERTY_STATE} и {@link #PROPERTY_CAN_UNDO}
+     *         для уведомления подписчиков (View).</li>
+     * </ul>
      *
-     * @param newState The new state to set.
+     * @param newState Новое состояние {@link FractalState} для установки. Не может быть null.
+     * @throws NullPointerException если {@code newState} равно null.
      */
     public void loadState(FractalState newState) {
-        Objects.requireNonNull(newState, "New state cannot be null");
+        Objects.requireNonNull(newState, "Новое состояние не может быть null");
         FractalState oldState = this.currentState;
         boolean oldCanUndo = undoManager.canUndo();
 
-        this.currentState = newState; // Прямое обновление состояния
-        undoManager.clearHistory(); // Очистка истории для загруженного состояния
+        // Проверяем, действительно ли состояние отличается (избегаем лишних действий)
+        if (!Objects.equals(oldState, newState)) {
+            this.currentState = newState; // Прямое обновление состояния
+            undoManager.clearHistory(); // Очистка истории для загруженного состояния
 
-        support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
-        // После очистки истории canUndo точно false (если только не было false до этого)
-        boolean newCanUndo = false; // undoManager.canUndo() вернет false
-        if (oldCanUndo != newCanUndo) {
-             support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
+            support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+            // После очистки истории canUndo точно станет false
+            boolean newCanUndo = false; // undoManager.canUndo() вернет false
+            if (oldCanUndo != newCanUndo) { // Уведомляем, только если изменилось
+                 support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
+            }
+            System.out.println("Состояние загружено: " + newState);
+            // Рендер запустит панель при получении события PROPERTY_STATE
+        } else {
+             System.out.println("Загрузка состояния пропущена: новое состояние идентично текущему.");
         }
-        // Рендер запустит панель при получении события PROPERTY_STATE
     }
 
     /**
-     * Executes a command, updates the state, adds it to the undo history,
-     * and notifies listeners.
-     *
-     * @param command The command to execute.
+     * Выполняет переданную команду {@link Command}.
+     * <p>
+     * Процесс выполнения:
+     * <ul>
+     *     <li>Вызывается метод {@code command.execute()}.</li>
+     *     <li>Если {@code execute()} вернул {@code true} (команда успешно выполнена и изменила состояние):
+     *         <ul>
+     *             <li>Команда добавляется в историю {@link UndoManager}.</li>
+     *             <li>Генерируются события {@link #PROPERTY_STATE} (с oldState и обновленным currentState)
+     *                 и {@link #PROPERTY_CAN_UNDO} (если доступность отмены изменилась)
+     *                 для уведомления View.</li>
+     *         </ul>
+     *     </li>
+     *     <li>Если {@code execute()} вернул {@code false}, никаких изменений и уведомлений не происходит.</li>
+     * </ul>
+     * @param command Команда для выполнения. Не должна быть null.
      */
     private void executeCommand(Command command) {
+        Objects.requireNonNull(command, "Команда не может быть null");
         FractalState oldState = this.currentState;
         boolean oldCanUndo = undoManager.canUndo();
 
-        // Команда сама обновит состояние через viewModel.updateStateFromCommand()
+        // Команда сама обновит состояние через viewModel.updateStateFromCommand() внутри execute()
         if (command.execute()) {
+            // Состояние УЖЕ обновлено командой, теперь нужно добавить в историю и оповестить
             undoManager.addCommand(command);
-            // Состояние УЖЕ обновлено командой, теперь нужно оповестить слушателей
-            support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+
+            // Сравниваем состояния ДО и ПОСЛЕ выполнения команды
+            // Если команда ничего не изменила, событие не генерируем
+            if (!Objects.equals(oldState, this.currentState)) {
+                 support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+            } else {
+                // Если состояние не изменилось, но команда сказала "true" - странная ситуация
+                System.err.println("Предупреждение: Команда " + command.getClass().getSimpleName()
+                                   + " вернула true, но состояние ViewModel не изменилось.");
+                // Возможно, команду все равно стоит добавить в историю, если она что-то сделала, но не состояние?
+                // Пока оставляем как есть - добавляем в историю, но не шлем PROPERTY_STATE.
+            }
+
 
             boolean newCanUndo = undoManager.canUndo();
-            if (oldCanUndo != newCanUndo) {
+            if (oldCanUndo != newCanUndo) { // Уведомляем, только если изменилось
                 support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
             }
-            // Рендер запустит панель при получении события PROPERTY_STATE
+            // Рендер запустит панель при получении события PROPERTY_STATE (если оно было сгенерировано)
         }
     }
 
     /**
-     * Zooms into a rectangular region defined by screen coordinates.
+     * Выполняет масштабирование (зум) в прямоугольную область,
+     * заданную координатами углов на экране (в пикселях).
+     * Создает и выполняет {@link ZoomCommand}.
      *
-     * @param startX      Start X pixel coordinate.
-     * @param startY      Start Y pixel coordinate.
-     * @param endX        End X pixel coordinate.
-     * @param endY        End Y pixel coordinate.
-     * @param panelWidth  Current width of the drawing panel.
-     * @param panelHeight Current height of the drawing panel.
+     * @param startX      X-координата одного угла выделения (пиксель).
+     * @param startY      Y-координата одного угла выделения (пиксель).
+     * @param endX        X-координата противоположного угла выделения (пиксель).
+     * @param endY        Y-координата противоположного угла выделения (пиксель).
+     * @param panelWidth  Текущая ширина панели отрисовки (для конвертации координат и аспекта). Должна быть > 0.
+     * @param panelHeight Текущая высота панели отрисовки (для конвертации координат и аспекта). Должна быть > 0.
      */
     public void zoomOnScreenRect(int startX, int startY, int endX, int endY, int panelWidth, int panelHeight) {
-        if (panelWidth <= 0 || panelHeight <= 0) return;
+        if (panelWidth <= 0 || panelHeight <= 0) {
+            System.err.println("zoomOnScreenRect вызван с некорректными размерами панели.");
+            return;
+        }
 
+        // Конвертируем экранные координаты углов в комплексные числа
         ComplexNumber c1 = CoordinateConverter.screenToComplex(startX, startY, panelWidth, panelHeight, currentState.getViewport());
         ComplexNumber c2 = CoordinateConverter.screenToComplex(endX, endY, panelWidth, panelHeight, currentState.getViewport());
 
-        if (c1 == null || c2 == null) return;
+        if (c1 == null || c2 == null) {
+            System.err.println("Не удалось сконвертировать экранные координаты для зума.");
+            return; // Ошибка конвертации
+        }
 
+        // Вычисляем целевое соотношение сторон на основе размеров панели
         double targetAspectRatio = (double) panelWidth / panelHeight;
-        Command zoomCommand = new ZoomCommand(this, c1.getReal(), c2.getReal(), c1.getImaginary(), c2.getImaginary(), targetAspectRatio);
+
+        // Создаем команду зума, передавая ViewModel, комплексные координаты углов и аспект
+        Command zoomCommand = new ZoomCommand(this,
+                                              c1.getReal(), c2.getReal(),
+                                              c1.getImaginary(), c2.getImaginary(),
+                                              targetAspectRatio,
+                                              BASE_ITERATIONS_FOR_ZOOM,
+                                              ITERATION_ZOOM_SENSITIVITY);
         executeCommand(zoomCommand);
     }
 
     /**
-     * Pans the view by a delta in screen coordinates.
+     * Выполняет панорамирование (сдвиг) вида на заданное смещение в экранных координатах (пикселях).
+     * Создает и выполняет {@link PanCommand}.
      *
-     * @param deltaX      Change in X pixel coordinate.
-     * @param deltaY      Change in Y pixel coordinate.
-     * @param panelWidth  Current width of the drawing panel.
-     * @param panelHeight Current height of the drawing panel.
+     * @param deltaX      Смещение по оси X в пикселях. Положительное значение - сдвиг содержимого влево (вид смещается вправо).
+     * @param deltaY      Смещение по оси Y в пикселях. Положительное значение - сдвиг содержимого вверх (вид смещается вниз).
+     * @param panelWidth  Текущая ширина панели отрисовки (для расчета шага). Должна быть > 0.
+     * @param panelHeight Текущая высота панели отрисовки (для расчета шага). Должна быть > 0.
      */
     public void panOnScreenDelta(int deltaX, int deltaY, int panelWidth, int panelHeight) {
-        if (panelWidth <= 0 || panelHeight <= 0 || (deltaX == 0 && deltaY == 0)) return;
+        if (panelWidth <= 0 || panelHeight <= 0) {
+             System.err.println("panOnScreenDelta вызван с некорректными размерами панели.");
+             return;
+        }
+        if (deltaX == 0 && deltaY == 0) {
+            return; // Нет смещения
+        }
 
-        double complexDeltaPerPixelX = currentState.getViewport().getWidth() / (panelWidth - 1);
-        double complexDeltaPerPixelY = currentState.getViewport().getHeight() / (panelHeight - 1);
+        // Рассчитываем, какому изменению комплексных координат соответствует сдвиг на один пиксель
+        double complexDeltaPerPixelX = currentState.getViewport().getWidth() / (panelWidth > 1 ? (panelWidth - 1.0) : 1.0);
+        double complexDeltaPerPixelY = currentState.getViewport().getHeight() / (panelHeight > 1 ? (panelHeight - 1.0) : 1.0);
 
+        // Вычисляем общее смещение в комплексных координатах
+        // Знак (-) для deltaX, так как движение мыши вправо (увеличение screenX) должно сдвигать viewport влево (уменьшать minX/maxX)
+        // Знак (+) для deltaY, так как движение мыши вниз (увеличение screenY) должно сдвигать viewport вверх (увеличивать minY/maxY) из-за инверсии оси Y экрана.
         double complexDeltaX = -deltaX * complexDeltaPerPixelX;
         double complexDeltaY = deltaY * complexDeltaPerPixelY;
 
+        // Создаем и выполняем команду панорамирования
         Command panCommand = new PanCommand(this, complexDeltaX, complexDeltaY);
         executeCommand(panCommand);
     }
 
     /**
-     * Undoes the last executed command and notifies listeners.
+     * Отменяет последнее выполненное действие (команду).
+     * Извлекает последнюю команду из {@link UndoManager} и вызывает ее метод {@code undo()}.
+     * Если отмена прошла успешно, генерируются события {@link #PROPERTY_STATE} и
+     * {@link #PROPERTY_CAN_UNDO} для уведомления View.
      */
     public void undoLastAction() {
         FractalState oldState = this.currentState;
         boolean oldCanUndo = undoManager.canUndo();
 
-        // undo() внутри себя вызовет viewModel.updateStateFromCommand()
+        // undo() внутри себя вызовет viewModel.updateStateFromCommand() через команду
         if (undoManager.undo()) {
              // Состояние УЖЕ обновлено через undo(), оповещаем слушателей
-             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+             if (!Objects.equals(oldState, this.currentState)) { // Уведомляем только если состояние изменилось
+                 support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+             } else {
+                 System.err.println("Предупреждение: UndoManager.undo() вернул true, но состояние ViewModel не изменилось.");
+             }
 
              boolean newCanUndo = undoManager.canUndo();
-             if (oldCanUndo != newCanUndo) {
+             if (oldCanUndo != newCanUndo) { // Уведомляем, только если изменилось
                  support.firePropertyChange(PROPERTY_CAN_UNDO, oldCanUndo, newCanUndo);
              }
-             // Рендер запустит панель при получении события PROPERTY_STATE
+             // Рендер запустит панель при получении события PROPERTY_STATE (если оно было)
         }
     }
 
 
     /**
-     * Changes the current color scheme and notifies listeners.
-     * Does NOT add an undo step for simplicity, but could be refactored into a command.
+     * Изменяет текущую цветовую схему {@link ColorScheme}.
+     * Это действие *не* добавляется в историю отмены (Undo) для простоты.
+     * Если бы требовалась отмена смены схемы, это следовало бы реализовать
+     * через отдельную команду {@code ChangeColorSchemeCommand}.
+     * <p>
+     * Если новая схема отличается от текущей, состояние обновляется и
+     * генерируется событие {@link #PROPERTY_STATE}.
+     * </p>
      *
-     * @param newScheme The new color scheme to apply.
+     * @param newScheme Новая цветовая схема для применения. Не может быть null.
+     * @throws NullPointerException если {@code newScheme} равно null.
      */
     public void changeColorScheme(ColorScheme newScheme) {
-        Objects.requireNonNull(newScheme, "Color scheme cannot be null");
+        Objects.requireNonNull(newScheme, "Цветовая схема не может быть null");
         FractalState oldState = this.currentState;
-        // Сравниваем классы, чтобы не обновлять, если схема того же типа уже установлена
-        if (!oldState.getColorScheme().getClass().equals(newScheme.getClass())) {
-            // Используем with-метод для создания нового состояния
-            this.currentState = oldState.withColorScheme(newScheme);
+
+        // Сравниваем схемы через equals, чтобы избежать обновления, если схема та же
+        if (!Objects.equals(oldState.getColorScheme(), newScheme)) {
+            // Используем with-метод для создания нового immutable состояния
+            FractalState newState = oldState.withColorScheme(newScheme);
+            // Напрямую обновляем состояние (без Undo)
+            this.currentState = newState;
             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+            System.out.println("Цветовая схема изменена на: " + newScheme.getName());
              // Рендер запустит панель при получении события PROPERTY_STATE
+        } else {
+             System.out.println("Смена цветовой схемы пропущена: новая схема идентична текущей.");
         }
     }
 
 
     /**
-     * Changes the maximum number of iterations and notifies listeners.
-     * Does NOT add an undo step for simplicity, but could be refactored into a command.
+     * Изменяет максимальное количество итераций для расчета фрактала.
+     * Это действие *не* добавляется в историю отмены (Undo) для простоты.
+     * Как и смена схемы, могло бы быть реализовано через команду.
+     * <p>
+     * Если новое количество итераций отличается от текущего и положительно,
+     * состояние обновляется и генерируется событие {@link #PROPERTY_STATE}.
+     * </p>
      *
-     * @param newMaxIterations The new maximum iteration count (must be positive).
+     * @param newMaxIterations Новое максимальное количество итераций. Должно быть > 0.
      */
     public void changeMaxIterations(int newMaxIterations) {
         if (newMaxIterations <= 0) {
-            System.err.println("Max iterations must be positive.");
-            return; // Или бросить исключение / показать диалог
+            System.err.println("Максимальное количество итераций должно быть положительным.");
+            // Можно бросить исключение или показать диалог ошибки во View
+            // throw new IllegalArgumentException("Max iterations must be positive.");
+            return;
         }
         FractalState oldState = this.currentState;
         if (oldState.getMaxIterations() != newMaxIterations) {
-             // Используем with-метод для создания нового состояния
-            this.currentState = oldState.withMaxIterations(newMaxIterations);
+             // Используем with-метод для создания нового immutable состояния
+            FractalState newState = oldState.withMaxIterations(newMaxIterations);
+            // Напрямую обновляем состояние (без Undo)
+            this.currentState = newState;
             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+            System.out.println("Макс. итераций изменено на: " + newMaxIterations);
              // Рендер запустит панель при получении события PROPERTY_STATE
+        } else {
+             System.out.println("Смена макс. итераций пропущена: новое значение идентично текущему.");
         }
     }
 
-    // public public void updateStateFromCommand(FractalState newState) {
-    //     this.currentState = newState;
-    // }
 
     /**
-     * Triggers rendering of the current state using the FractalRenderer.
-     */
-    private void triggerRender() {
-        // Здесь должен быть вызов рендерера с передачей текущего состояния
-        // Размеры изображения будут переданы из FractalPanel
-        System.out.println("Triggering render for state: " + currentState);
-        // Реальная реализация будет в FractalPanel, здесь только логика уведомления
-    }
-
-    /**
-     * Adds a listener for property change events.
+     * Добавляет слушателя для отслеживания изменений свойств ViewModel
+     * ({@link #PROPERTY_STATE} и {@link #PROPERTY_CAN_UNDO}).
      *
-     * @param listener The listener to add.
+     * @param listener Слушатель {@link PropertyChangeListener} для добавления.
      */
     public void addPropertyChangeListener(PropertyChangeListener listener) {
         support.addPropertyChangeListener(listener);
     }
 
     /**
-     * Removes a listener for property change events.
+     * Удаляет ранее добавленного слушателя изменений свойств.
      *
-     * @param listener The listener to remove.
+     * @param listener Слушатель {@link PropertyChangeListener} для удаления.
      */
     public void removePropertyChangeListener(PropertyChangeListener listener) {
         support.removePropertyChangeListener(listener);
     }
 
     /**
-     * Updates the current state from a command execution or load.
-     * Fires property change event.
+     * Внутренний метод для обновления текущего состояния {@link #currentState}.
+     * Используется командами ({@link Command#execute()}, {@link Command#undo()})
+     * для установки нового или восстановленного состояния.
+     * <p>
+     * <strong>Важно:</strong> Этот метод сам по себе *не* генерирует события
+     * {@code PropertyChange}. Генерация событий происходит в методах
+     * {@link #executeCommand(Command)}, {@link #undoLastAction()}, {@link #loadState(FractalState)}
+     * после успешного изменения состояния.
+     * </p>
      *
-     * @param newState The new state to set.
-     * @param oldState The previous state (for event firing).
+     * @param newState Новое состояние {@link FractalState} для установки. Не должно быть null.
      */
-    public void updateState(FractalState newState, FractalState oldState) {
-        Objects.requireNonNull(newState, "New state cannot be null");
+    public void updateStateFromCommand(FractalState newState) {
+        Objects.requireNonNull(newState, "Новое состояние от команды не может быть null");
         this.currentState = newState;
-        support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
-        // Обновление canUndo должно происходить там, где меняется undoManager
-    }
-
-    public void updateStateFromCommand(FractalState nextState) {
-        this.currentState = nextState;
+        // PropertyChange event НЕ генерируется здесь, а в вызывающем методе (executeCommand/undoLastAction)
     }
 }
