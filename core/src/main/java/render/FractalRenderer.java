@@ -8,6 +8,7 @@ import utils.CoordinateConverter;
 import math.FractalFunction; // <-- Добавлен импорт
 
 
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -19,6 +20,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicInteger; // <-- Добавлено для счетчика тайлов
+import java.util.concurrent.CancellationException; // <-- Добавлено для обработки отмены
 
 
 
@@ -32,60 +35,74 @@ public class FractalRenderer {
     private final int numThreads;
     private final AtomicReference<RenderTask> currentRenderTask = new AtomicReference<>();
 
-    /**
-     * Constructs a new FractalRenderer with a thread pool based on available processors.
-     */
     public FractalRenderer() {
         this.numThreads = Runtime.getRuntime().availableProcessors();
+        // Используем кэширующий пул или фиксированный, как раньше? Фиксированный проще для управления.
         this.executor = Executors.newFixedThreadPool(numThreads);
-        System.out.println("Renderer initialized with " + numThreads + " threads.");
+        System.out.println("Renderer инициализирован с " + numThreads + " потоками.");
     }
 
     /**
-     * Asynchronously renders the fractal based on the given state and dimensions.
-     * Cancels any previous render task before starting a new one.
+     * Асинхронно рендерит фрактал.
+     * Отменяет предыдущую задачу перед запуском новой.
      *
-     * @param state      The FractalState defining the view and parameters.
-     * @param width      The target image width.
-     * @param height     The target image height.
-     * @param onComplete Callback to accept the rendered image upon completion (called on EDT).
-     * @param onCancel   Callback called if the task is cancelled (called on EDT).
+     * @param state      Состояние фрактала для рендеринга.
+     * @param width      Ширина целевого изображения.
+     * @param height     Высота целевого изображения.
+     * @param onComplete Колбэк при успешном завершении (вызывается в EDT).
+     * @param onCancel   Колбэк при отмене задачи (вызывается в EDT).
+     * @param progressUpdater Колбэк для обновления прогресса (вызывается после каждого тайла, можно из раб. потока).
      */
     public void render(FractalState state, int width, int height,
-                       Consumer<BufferedImage> onComplete, Runnable onCancel) {
+                       Consumer<BufferedImage> onComplete, Runnable onCancel, Runnable progressUpdater) { // <-- Добавлен progressUpdater
         if (width <= 0 || height <= 0) {
-            System.err.println("Invalid render dimensions: " + width + "x" + height);
-            SwingUtilities.invokeLater(() -> onComplete.accept(null));
+            System.err.println("Некорректные размеры для рендеринга: " + width + "x" + height);
+            SwingUtilities.invokeLater(() -> onComplete.accept(null)); // Уведомляем о неудаче в EDT
             return;
         }
 
+        // Создаем изображение здесь, чтобы оно было доступно задаче
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        RenderTask newTask = new RenderTask(state, width, height, image, onComplete, onCancel);
-        RenderTask oldTask = currentRenderTask.getAndSet(newTask);
 
+        // Создаем новую задачу рендеринга
+        RenderTask newTask = new RenderTask(state, width, height, image, onComplete, onCancel, progressUpdater);
+
+        // Получаем и отменяем предыдущую задачу атомарно
+        RenderTask oldTask = currentRenderTask.getAndSet(newTask);
         if (oldTask != null) {
+            System.out.println("Отмена предыдущей задачи рендеринга...");
             oldTask.cancel();
         }
 
+        // Запускаем новую задачу
         newTask.startRendering(executor);
     }
 
-    /**
-     * Shuts down the thread pool gracefully. Blocks until all tasks are terminated.
-     */
     public void shutdown() {
+        // Отменяем текущую задачу, если она есть
+        RenderTask task = currentRenderTask.get();
+        if(task != null) {
+            task.cancel();
+        }
+
+        // Завершаем работу пула потоков
         executor.shutdown();
         try {
-            if (!executor.awaitTermination(800, TimeUnit.MILLISECONDS)) {
+            if (!executor.awaitTermination(1, TimeUnit.SECONDS)) { // Ждем немного
                 executor.shutdownNow();
+                if (!executor.awaitTermination(1, TimeUnit.SECONDS)) // Еще ждем
+                    System.err.println("Пул потоков рендерера не завершился корректно.");
             }
-        } catch (InterruptedException e) {
+        } catch (InterruptedException ie) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
-        System.out.println("Renderer shut down.");
+        System.out.println("Рендерер остановлен.");
     }
 
+    /**
+     * Внутренний класс, представляющий одну задачу рендеринга.
+     */
     private static class RenderTask {
         private final FractalState state;
         private final int width;
@@ -93,136 +110,176 @@ public class FractalRenderer {
         private final BufferedImage image;
         private final Consumer<BufferedImage> onComplete;
         private final Runnable onCancel;
+        private final Runnable progressUpdater; // <-- Добавлен колбэк прогресса
         private volatile boolean cancelled = false;
-        private final List<Future<?>> futures = new ArrayList<>(); // Список задач для отмены
+        private final List<Future<?>> futures = new ArrayList<>(); // Для возможности отмены отдельных тайлов
 
         RenderTask(FractalState state, int width, int height, BufferedImage image,
-                   Consumer<BufferedImage> onComplete, Runnable onCancel) {
+                   Consumer<BufferedImage> onComplete, Runnable onCancel, Runnable progressUpdater) {
             this.state = state;
             this.width = width;
             this.height = height;
             this.image = image;
             this.onComplete = onComplete;
             this.onCancel = onCancel;
+            this.progressUpdater = progressUpdater; // <-- Сохраняем колбэк
         }
 
         /**
-         * Cancels the rendering task and interrupts all running tile tasks.
+         * Отменяет задачу рендеринга.
          */
         void cancel() {
+            // Устанавливаем флаг отмены ДО отмены Future
+            if (cancelled) return; // Уже отменено
             cancelled = true;
-            for (Future<?> future : futures) {
-                future.cancel(true); // Прерываем потоки
+            System.out.println("Запрос на отмену RenderTask...");
+            // Отменяем все запущенные или ожидающие Future
+            synchronized (futures) { // Синхронизация на случай добавления Future в другом потоке (хотя здесь это маловероятно)
+                for (Future<?> future : futures) {
+                    future.cancel(true); // true - прерывать поток, если он выполняется
+                }
+                futures.clear(); // Очищаем список, больше не нужен
             }
-            System.out.println("Render task cancelled.");
+            // Вызываем onCancel в EDT ПОСЛЕ установки флага и попытки отмены
             SwingUtilities.invokeLater(onCancel);
         }
 
         /**
-         * Starts the rendering process using the provided ExecutorService.
-         *
-         * @param executor The thread pool to use for rendering.
+         * Запускает рендеринг тайлов в пуле потоков.
+         * @param executor Пул потоков для выполнения задач.
          */
         void startRendering(ExecutorService executor) {
             List<Tile> tiles = TileCalculator.calculateTiles(width, height, TILE_SIZE);
+            if (tiles.isEmpty()) {
+                System.err.println("Нет тайлов для рендеринга (некорректные размеры?).");
+                SwingUtilities.invokeLater(() -> onComplete.accept(image)); // Завершаем с пустым изображением
+                return;
+            }
+
+            // Заполняем фон серым (быстрее, чем рендерить все пиксели)
             Graphics2D g = image.createGraphics();
-            g.setColor(Color.LIGHT_GRAY);
+            g.setColor(Color.DARK_GRAY); // Цвет фона во время рендеринга
             g.fillRect(0, 0, width, height);
             g.dispose();
 
-            executor.submit(() -> {
-                try {
-                    long startTime = System.currentTimeMillis();
+            AtomicInteger completedTiles = new AtomicInteger(0); // Счетчик завершенных тайлов
 
+            // Создаем главную задачу, которая запускает рендеринг тайлов
+            Future<?> mainRenderFuture = executor.submit(() -> {
+                long startTime = System.currentTimeMillis();
+                List<Future<?>> tileFutures = new ArrayList<>(tiles.size()); // Локальный список для этой задачи
+
+                try {
+                    // Отправляем все задачи на рендеринг тайлов
                     for (Tile tile : tiles) {
-                        if (cancelled) break;
+                        if (cancelled) throw new CancellationException("Задача отменена перед рендерингом тайла");
 
                         Future<?> future = executor.submit(() -> {
-                            if (!cancelled) {
-                                renderTile(tile, state, width, height, image);
+                            if (Thread.currentThread().isInterrupted() || cancelled) {
+                                //System.out.println("Рендеринг тайла пропущен из-за отмены/прерывания");
+                                return; // Не рендерим, если отменили или прервали
                             }
+                            renderTile(tile, state, width, height, image);
                         });
-                        futures.add(future);
-                    }
-
-                    for (Future<?> future : futures) {
-                        if (cancelled) break;
-                        try {
-                            future.get();
-                        } catch (Exception e) {
-                            if (!cancelled) {
-                                System.err.println("Error rendering tile: " + e.getMessage());
-                            }
+                        tileFutures.add(future);
+                        // Добавляем в общий список для внешней отмены (на всякий случай, если cancel() вызовется во время этого цикла)
+                        synchronized(futures) {
+                            if(cancelled) throw new CancellationException("Задача отменена во время добавления тайлов");
+                            futures.add(future);
                         }
                     }
 
-                    if (!cancelled) {
-                        long endTime = System.currentTimeMillis();
-                        System.out.printf("Rendering finished in %d ms%n", (endTime - startTime));
-                        SwingUtilities.invokeLater(() -> onComplete.accept(image));
+                    // Ждем завершения всех тайлов
+                    for (Future<?> future : tileFutures) {
+                        if (cancelled) throw new CancellationException("Задача отменена во время ожидания тайлов");
+                        try {
+                            future.get(); // Ждем завершения одного тайла
+                            // Вызываем progressUpdater ПОСЛЕ успешного завершения тайла
+                            if (!cancelled) { // Дополнительная проверка перед вызовом
+                                progressUpdater.run();
+                            }
+                            completedTiles.incrementAndGet(); // Увеличиваем счетчик
+                        } catch (CancellationException e) {
+                            // Если тайл отменили, просто пропускаем его и идем дальше (или прерываем всю задачу?)
+                            System.out.println("Рендеринг тайла отменен.");
+                            // Если отменили один тайл, скорее всего, отменена вся задача.
+                            if(!cancelled) cancel(); // Отменяем всю задачу, если еще не отменена
+                            throw e; // Перебрасываем, чтобы прервать ожидание остальных
+                        } catch (InterruptedException e) {
+                            System.err.println("Поток рендеринга тайла прерван.");
+                            if(!cancelled) cancel(); // Отменяем всю задачу
+                            Thread.currentThread().interrupt(); // Восстанавливаем статус прерывания
+                            throw new CancellationException("Задача прервана"); // Используем CancellationException для единообразия
+                        } catch (Exception e) {
+                            // Ошибка при рендеринге тайла
+                            System.err.println("Ошибка рендеринга тайла: " + e.getMessage());
+                            e.printStackTrace(); // Логируем для отладки
+                            if(!cancelled) cancel(); // Считаем это фатальной ошибкой для всей задачи
+                            throw new RuntimeException("Ошибка рендеринга тайла", e); // Перебрасываем
+                        }
                     }
 
-                } catch (Exception e) {
-                    System.err.println("Rendering failed: " + e.getMessage());
+                    // Если дошли сюда и не было отмены - рендеринг успешен
                     if (!cancelled) {
-                        SwingUtilities.invokeLater(() -> onComplete.accept(null));
+                        long endTime = System.currentTimeMillis();
+                        System.out.printf("Рендеринг завершен за %d мс (%d тайлов)%n", (endTime - startTime), completedTiles.get());
+                        SwingUtilities.invokeLater(() -> {
+                            // Финальная проверка на отмену перед вызовом onComplete
+                            if (!cancelled) {
+                                onComplete.accept(image);
+                            } else {
+                                System.out.println("Финальный onComplete пропущен из-за отмены.");
+                            }
+                        });
+                    }
+
+                } catch (CancellationException e){
+                    // Эта ветка ловит отмену, инициированную изнутри цикла или извне
+                    System.out.println("Основная задача рендеринга отменена.");
+                    // onCancel уже должен был быть вызван методом cancel()
+                } catch (Exception e) {
+                    // Ловим другие ошибки основной задачи
+                    System.err.println("Ошибка в основной задаче рендеринга: " + e.getMessage());
+                    e.printStackTrace();
+                    if (!cancelled) { // Если не было явной отмены, вызываем onCancel
+                        cancel(); // Устанавливаем флаг и вызываем onCancel
+                    }
+                    // Не вызываем onComplete(null) здесь, т.к. cancel() вызовет onCancel
+                } finally {
+                    // Очистка списка futures после завершения/отмены
+                    synchronized (futures) {
+                        futures.clear();
                     }
                 }
             });
+            // Добавляем основную задачу в список (хотя ее отмена не так важна, как отмена тайлов)
+            synchronized (futures) {
+                if(!cancelled) futures.add(mainRenderFuture);
+            }
         }
 
-        /**
-     * Renders a single tile of the fractal image using the FractalFunction from the state.
-     *
-     * @param tile        The tile to render.
-     * @param state       The fractal state containing viewport, iterations, color scheme, and fractal function.
-     * @param imageWidth  The total image width.
-     * @param imageHeight The total image height.
-     * @param targetImage The image to render into.
-     */
-    private static void renderTile(Tile tile, FractalState state, int imageWidth, int imageHeight, BufferedImage targetImage) {
-        Viewport viewport = state.getViewport();
-        int maxIterations = state.getMaxIterations();
-        ColorScheme colorScheme = state.getColorScheme();
-        FractalFunction fractalFunction = state.getFractalFunction(); // <-- Получаем функцию из состояния
+        // Метод renderTile остается прежним
+        private static void renderTile(Tile tile, FractalState state, int imageWidth, int imageHeight, BufferedImage targetImage) {
+            // ... (код renderTile без изменений) ...
+            Viewport viewport = state.getViewport();
+            int maxIterations = state.getMaxIterations();
+            ColorScheme colorScheme = state.getColorScheme();
+            FractalFunction fractalFunction = state.getFractalFunction();
 
-        for (int y = tile.startY; y < tile.startY + tile.height; ++y) {
-            if (Thread.currentThread().isInterrupted()) return;
-            for (int x = tile.startX; x < tile.startX + tile.width; ++x) {
-                // Преобразуем пиксельные координаты в комплексное число (это будет и z0 и c для Мандельброта)
-                ComplexNumber pointCoords = CoordinateConverter.screenToComplex(x, y, imageWidth, imageHeight, viewport);
-                if (pointCoords == null) continue; // Пропускаем, если конвертация не удалась
+            for (int y = tile.startY; y < tile.startY + tile.height; ++y) {
+                if (Thread.currentThread().isInterrupted()) return; // Быстрая проверка
+                for (int x = tile.startX; x < tile.startX + tile.width; ++x) {
+                    ComplexNumber pointCoords = CoordinateConverter.screenToComplex(x, y, imageWidth, imageHeight, viewport);
+                    if (pointCoords == null) continue;
 
-                // Вычисляем итерации, используя функцию из состояния
-                // Для Мандельброта: z0=0 (реализовано в MandelbrotFunction), c=pointCoords
-                // Для Жюлиа: z0=pointCoords, c=константа (реализовано в JuliaFunction)
-                // Передаем pointCoords как z0 и как c. Конкретная функция решит, что использовать.
-                int iterations = fractalFunction.calculateIterations(pointCoords, pointCoords, maxIterations);
+                    int iterations = fractalFunction.calculateIterations(pointCoords, pointCoords, maxIterations);
+                    Color color = colorScheme.getColor(iterations, maxIterations);
 
-                // Получаем цвет на основе итераций
-                Color color = colorScheme.getColor(iterations, maxIterations);
-
-                // Устанавливаем пиксель в изображении (с проверкой границ)
-                if (x >= 0 && x < targetImage.getWidth() && y >= 0 && y < targetImage.getHeight()) {
-                    targetImage.setRGB(x, y, color.getRGB());
+                    if (x >= 0 && x < targetImage.getWidth() && y >= 0 && y < targetImage.getHeight()) {
+                        targetImage.setRGB(x, y, color.getRGB());
+                    }
                 }
             }
-        }
-    }
-        /**
-         * Calculates iterations for a point in the Mandelbrot set.
-         *
-         * @param c             The complex number to test.
-         * @param maxIterations The maximum iterations to perform.
-         * @return The number of iterations before escaping, or maxIterations if inside.
-         */
-        private static int calculateMandelbrotIterations(ComplexNumber c, int maxIterations) {
-            ComplexNumber z = new ComplexNumber(0, 0);
-            for (int i = 0; i < maxIterations; ++i) {
-                if (z.magnitudeSquared() > 4.0) return i;
-                z = z.square().add(c);
-            }
-            return maxIterations;
         }
     }
 }

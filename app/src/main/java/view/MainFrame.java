@@ -1,3 +1,4 @@
+// File: app/src/main/java/view/MainFrame.java
 package view;
 
 import render.FractalRenderer;
@@ -10,58 +11,47 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
 /**
- * Главное окно приложения "Mandelbrot Set Explorer".
- * Содержит основную панель для отрисовки фрактала ({@link FractalPanel})
- * и главное меню ({@link MenuBar}). Инициализирует ключевые компоненты
- * архитектуры: {@link FractalViewModel}, {@link FractalRenderer}, {@link FileService}.
- * Обрабатывает событие закрытия окна для корректного завершения работы.
+ * Главное окно приложения "Fractal Explorer". // Изменено название для соответствия
+ * Содержит панель отрисовки фрактала ({@link FractalPanel}),
+ * главное меню ({@link MenuBar}) и строку состояния ({@link StatusBar}).
+ * Инициализирует ключевые компоненты архитектуры.
  */
 public class MainFrame extends JFrame {
 
-    /** ViewModel, управляющая состоянием фрактала Мандельброта. */
     private final FractalViewModel viewModel;
-    /** Рендерер, отвечающий за вычисление и отрисовку фрактала. */
     private final FractalRenderer renderer;
-    /** Сервис для операций с файлами (сохранение/загрузка состояния и изображений). */
     private final FileService fileService;
-    /** Панель, отображающая фрактал и обрабатывающая ввод пользователя. */
     private final FractalPanel fractalPanel;
+    private final StatusBar statusBar; // <-- Добавлено
 
     /**
      * Конструирует главное окно приложения.
-     * Инициализирует ViewModel, Renderer, FileService, FractalPanel и MenuBar.
-     * Настраивает основные параметры окна (заголовок, операция закрытия по умолчанию,
-     * расположение) и добавляет слушатель для обработки закрытия окна.
      */
     public MainFrame() {
-        // Инициализация основных компонентов
         renderer = new FractalRenderer();
-        viewModel = new FractalViewModel(renderer); // ViewModel для Мандельброта
+        viewModel = new FractalViewModel(renderer);
         fileService = new FileService();
 
-        // Настройка окна
-        setTitle("Mandelbrot Set Explorer");
-        // Устанавливаем DO_NOTHING_ON_CLOSE, чтобы обработать закрытие в windowClosing
+        setTitle("Fractal Explorer"); // Изменено название
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        setLocationRelativeTo(null); // Центрировать окно на экране
+        setLocationRelativeTo(null);
 
-        // Создание и настройка компонентов GUI
-        fractalPanel = new FractalPanel(viewModel, renderer); // Панель для Мандельброта
-        MenuBar menuBar = new MenuBar(viewModel, fileService, fractalPanel, this);
+        // Создание строки состояния ДО панели фрактала
+        statusBar = new StatusBar(); // <-- Создаем StatusBar
 
-        // Сборка интерфейса
+        // Модифицируем создание FractalPanel и MenuBar, передавая StatusBar или MainFrame
+        fractalPanel = new FractalPanel(viewModel, renderer, this); // Передаем MainFrame
+        MenuBar menuBar = new MenuBar(viewModel, fileService, fractalPanel, this); // MenuBar уже получает MainFrame
+
         setJMenuBar(menuBar);
-        add(fractalPanel, BorderLayout.CENTER); // Добавляем панель в центр окна
-        pack(); // Устанавливает размер окна на основе предпочтительных размеров компонентов
+        setLayout(new BorderLayout()); // Убедимся, что используется BorderLayout
+        add(fractalPanel, BorderLayout.CENTER);
+        add(statusBar, BorderLayout.SOUTH); // <-- Добавляем StatusBar вниз
 
-        // Добавляем слушатель для обработки события закрытия окна
+        pack();
+        setMinimumSize(new Dimension(400, 300)); // Установим минимальный разумный размер
+
         addWindowListener(new WindowAdapter() {
-            /**
-             * Вызывается, когда пользователь пытается закрыть окно (нажимает крестик).
-             * Вызывает метод {@link #handleWindowClose()} для подтверждения
-             * и корректного завершения работы.
-             * @param e Событие окна.
-             */
             @Override
             public void windowClosing(WindowEvent e) {
                 handleWindowClose();
@@ -70,56 +60,46 @@ public class MainFrame extends JFrame {
     }
 
     /**
-     * Обрабатывает попытку закрытия главного окна.
-     * Показывает диалог подтверждения. Если пользователь подтверждает выход,
-     * останавливает потоки рендерера, освобождает ресурсы окна и завершает приложение.
+     * Возвращает экземпляр строки состояния.
+     * @return StatusBar этого окна.
      */
-    private void handleWindowClose() {
-        // Показываем диалог подтверждения
-        int confirmation = JOptionPane.showConfirmDialog(
-                this, // Родительский компонент для диалога
-                "Are you sure you want to exit?", // Сообщение
-                "Confirm Exit", // Заголовок диалога
-                JOptionPane.YES_NO_OPTION, // Кнопки Да/Нет
-                JOptionPane.QUESTION_MESSAGE // Иконка вопроса
-        );
-
-        // Если пользователь нажал "Да"
-        if (confirmation == JOptionPane.YES_OPTION) {
-            System.out.println("Shutting down renderer...");
-            // Корректно останавливаем ExecutorService рендерера
-            renderer.shutdown();
-            System.out.println("Exiting application.");
-            // Освобождаем ресурсы окна
-            dispose();
-            // Завершаем работу JVM
-            System.exit(0);
-        }
-        // Если пользователь нажал "Нет", ничего не делаем, окно остается открытым
+    public StatusBar getStatusBar() { // <-- Метод для доступа к StatusBar
+        return statusBar;
     }
 
-    /**
-     * Главный метод, точка входа в приложение.
-     * Устанавливает системный Look and Feel для нативного вида интерфейса
-     * и запускает создание и отображение главного окна в потоке
-     * диспетчеризации событий Swing (EDT).
-     *
-     * @param args Аргументы командной строки (не используются).
-     */
+    // Метод handleWindowClose остается без изменений
+
+    // Метод main остается без изменений
+    private void handleWindowClose() {
+        int confirmation = JOptionPane.showConfirmDialog(
+                this,
+                "Вы уверены, что хотите выйти?", // Сообщение на русском
+                "Подтверждение выхода", // Заголовок на русском
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE
+        );
+
+        if (confirmation == JOptionPane.YES_OPTION) {
+            System.out.println("Shutting down renderer...");
+            renderer.shutdown();
+            // Убедимся, что рендерер в панели предпросмотра анимации тоже остановлен, если диалог был открыт
+            // (Хотя закрытие диалога должно было это сделать)
+            System.out.println("Завершение работы приложения.");
+            dispose();
+            System.exit(0);
+        }
+    }
+
     public static void main(String[] args) {
-        // Попытка установить системный стиль интерфейса для лучшего внешнего вида
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {
-            // В случае ошибки просто выводим сообщение, приложение продолжит работу со стилем по умолчанию
-            System.err.println("Couldn't set system look and feel: " + e.getMessage());
+            System.err.println("Не удалось установить системный стиль: " + e.getMessage());
         }
 
-        // Запускаем создание и отображение GUI в потоке диспетчеризации событий (EDT)
-        // Это стандартная практика для работы со Swing для обеспечения потокобезопасности
         SwingUtilities.invokeLater(() -> {
             MainFrame frame = new MainFrame();
-            frame.setVisible(true); // Делаем окно видимым
+            frame.setVisible(true);
         });
     }
 }

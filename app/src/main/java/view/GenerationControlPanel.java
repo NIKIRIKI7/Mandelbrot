@@ -18,13 +18,12 @@ public class GenerationControlPanel extends JPanel {
     /**
      * Создает панель управления генерацией анимации.
      *
-     * @param generateOrCancelAction Слушатель {@link ActionListener}, который будет вызываться
-     *                               при нажатии кнопки "Генерировать/Отмена".
+     * @param generateOrCancelAction Слушатель для кнопки "Генерировать/Отмена".
      */
     public GenerationControlPanel(ActionListener generateOrCancelAction) {
-        setLayout(new BorderLayout(5, 5)); // Используем BorderLayout
+        setLayout(new BorderLayout(5, 5));
 
-        // Кнопка Запуска/Отмены
+        // Кнопка
         generateButton = new JButton("Генерировать видео...");
         generateButton.setToolTipText("Запустить процесс генерации видео или отменить текущий процесс");
         if (generateOrCancelAction != null) {
@@ -32,31 +31,31 @@ public class GenerationControlPanel extends JPanel {
         }
 
         // Индикатор прогресса
-        progressBar = new JProgressBar(0, 100); // Диапазон от 0 до 100 %
-        progressBar.setStringPainted(true); // Отображать текст (например, "50%")
-        progressBar.setVisible(false); // Изначально скрыт, пока генерация не начнется
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setStringPainted(true);
+        progressBar.setVisible(false); // Изначально скрыт
 
         // Метка статуса
         statusLabel = new JLabel("Готово к настройке.");
-        statusLabel.setHorizontalAlignment(SwingConstants.LEFT); // Выравнивание текста по левому краю
+        statusLabel.setHorizontalAlignment(SwingConstants.LEFT);
+        statusLabel.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5)); // Небольшие отступы
 
-        // Панель для статуса и прогресса (чтобы они были вместе)
-        JPanel statusProgressPanel = new JPanel(new BorderLayout(5, 5));
-        statusProgressPanel.add(statusLabel, BorderLayout.CENTER); // Статус занимает центр
-        statusProgressPanel.add(progressBar, BorderLayout.SOUTH); // Прогресс-бар под статусом
+        // Панель для статуса и прогресса
+        JPanel statusProgressPanel = new JPanel(new BorderLayout(5, 0)); // Меньший отступ
+        statusProgressPanel.add(statusLabel, BorderLayout.CENTER);
+        statusProgressPanel.add(progressBar, BorderLayout.EAST); // Поместим прогресс бар справа от статуса
 
-        // Добавляем компоненты на основную панель
-        add(generateButton, BorderLayout.NORTH); // Кнопка сверху
-        add(statusProgressPanel, BorderLayout.CENTER); // Статус и прогресс в центре
+        // Добавляем компоненты
+        add(generateButton, BorderLayout.NORTH);
+        add(statusProgressPanel, BorderLayout.CENTER); // Статус и прогресс вместе в центре
+        setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0)); // Отступ сверху
     }
 
     /**
-     * Обновляет текст в метке статуса. Потокобезопасно для вызова из любого потока.
-     *
-     * @param text Текст для отображения в статусной строке.
+     * Обновляет текст в метке статуса. Потокобезопасно.
+     * @param text Текст статуса.
      */
     public void setStatus(String text) {
-        // Обновляем метку в потоке диспетчеризации событий (EDT)
         if (SwingUtilities.isEventDispatchThread()) {
             statusLabel.setText(text);
         } else {
@@ -65,8 +64,7 @@ public class GenerationControlPanel extends JPanel {
     }
 
     /**
-     * Возвращает текущий текст из метки статуса.
-     *
+     * Возвращает текущий текст статуса.
      * @return Текст статуса.
      */
     public String getStatus() {
@@ -75,28 +73,23 @@ public class GenerationControlPanel extends JPanel {
 
 
     /**
-     * Обновляет значение индикатора прогресса (от 0 до 100).
-     * Потокобезопасно для вызова из любого потока.
-     *
-     * @param value Значение прогресса (0-100). Значения вне диапазона будут обрезаны.
+     * Обновляет значение индикатора прогресса (0-100). Потокобезопасно.
+     * @param value Значение прогресса.
      */
     public void setProgress(int value) {
-        // Обновляем прогресс-бар в потоке EDT
+        final int clampedValue = Math.max(0, Math.min(100, value));
         if (SwingUtilities.isEventDispatchThread()) {
-            progressBar.setValue(value);
+            progressBar.setValue(clampedValue);
         } else {
-            SwingUtilities.invokeLater(() -> progressBar.setValue(value));
+            SwingUtilities.invokeLater(() -> progressBar.setValue(clampedValue));
         }
     }
 
     /**
-     * Устанавливает видимость индикатора прогресса.
-     * Потокобезопасно для вызова из любого потока.
-     *
-     * @param visible {@code true}, чтобы показать индикатор, {@code false} - чтобы скрыть.
+     * Устанавливает видимость индикатора прогресса. Потокобезопасно.
+     * @param visible {@code true} для показа, {@code false} для скрытия.
      */
     public void setProgressVisible(boolean visible) {
-        // Обновляем видимость в потоке EDT
         if (SwingUtilities.isEventDispatchThread()) {
             progressBar.setVisible(visible);
         } else {
@@ -105,13 +98,10 @@ public class GenerationControlPanel extends JPanel {
     }
 
     /**
-     * Устанавливает текст на кнопке генерации/отмены.
-     * Потокобезопасно для вызова из любого потока.
-     *
-     * @param text Текст для кнопки (например, "Генерировать видео..." или "Отмена").
+     * Устанавливает текст на кнопке генерации/отмены. Потокобезопасно.
+     * @param text Текст для кнопки.
      */
     public void setGenerateButtonText(String text) {
-        // Обновляем текст кнопки в потоке EDT
         if (SwingUtilities.isEventDispatchThread()) {
             generateButton.setText(text);
         } else {
@@ -120,13 +110,10 @@ public class GenerationControlPanel extends JPanel {
     }
 
     /**
-     * Устанавливает состояние активности (enabled/disabled) для кнопки генерации/отмены.
-     * Потокобезопасно для вызова из любого потока.
-     *
-     * @param enabled {@code true}, чтобы сделать кнопку активной, {@code false} - неактивной.
+     * Устанавливает состояние активности кнопки генерации/отмены. Потокобезопасно.
+     * @param enabled {@code true} для активации, {@code false} для деактивации.
      */
     public void setGenerateButtonEnabled(boolean enabled) {
-        // Обновляем состояние кнопки в потоке EDT
         if (SwingUtilities.isEventDispatchThread()) {
             generateButton.setEnabled(enabled);
         } else {

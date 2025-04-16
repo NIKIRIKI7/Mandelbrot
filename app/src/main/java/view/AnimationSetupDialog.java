@@ -7,6 +7,8 @@ import model.Keyframe;
 import model.Viewport;
 import services.AnimationService;
 import viewmodel.FractalViewModel;
+import math.FractalFunction;
+
 
 import javax.swing.*;
 import java.awt.*;
@@ -19,29 +21,24 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.text.ParseException;
+import java.util.concurrent.CancellationException; // Добавлен импорт
 
 /**
  * Диалоговое окно для настройки параметров анимации фрактала.
- * Выступает координатором для дочерних панелей:
- * {@link KeyframeListPanel}, {@link KeyframePreviewPanel},
- * {@link KeyframeParametersPanel}, {@link AnimationSettingsPanel}, {@link GenerationControlPanel}.
+ * Координирует работу дочерних панелей.
  */
 public class AnimationSetupDialog extends JDialog {
 
-    private final FractalViewModel mainViewModel; // Для получения начального вида
+    private final FractalViewModel mainViewModel;
     private final AnimationService animationService;
-
-    // Модель данных списка (общая для списка и диалога)
     private final DefaultListModel<Keyframe> keyframeListModel;
 
-    // Дочерние панели UI
     private KeyframeListPanel keyframeListPanel;
     private KeyframePreviewPanel keyframePreviewPanel;
     private KeyframeParametersPanel keyframeParametersPanel;
     private AnimationSettingsPanel animationSettingsPanel;
     private GenerationControlPanel generationControlPanel;
 
-    // Фоновая задача для генерации
     private SwingWorker<Void, String> animationWorker = null;
 
     /**
@@ -57,12 +54,11 @@ public class AnimationSetupDialog extends JDialog {
         this.keyframeListModel = new DefaultListModel<>();
 
         createAndLayoutPanels();
-        setupInteractionLogic(); // Этот метод теперь пуст, логика в обработчиках
 
         pack();
         setMinimumSize(new Dimension(850, 650));
         setLocationRelativeTo(ownerFrame);
-        setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE); // Ручная обработка закрытия
+        setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
 
         addWindowListener(new WindowAdapter() {
             @Override
@@ -72,25 +68,22 @@ public class AnimationSetupDialog extends JDialog {
         });
     }
 
-    /**
-     * Создает и размещает дочерние панели UI.
-     */
     private void createAndLayoutPanels() {
-        // 1. Создаем панели, передавая ссылки на методы-обработчики этого диалога
         keyframeListPanel = new KeyframeListPanel(
                 keyframeListModel,
                 this::addCurrentViewAsKeyframe,
                 this::removeSelectedKeyframe,
-                this::handleListSelectionChange // Передаем метод как Consumer<Integer>
+                this::handleListSelectionChange
         );
 
         keyframePreviewPanel = new KeyframePreviewPanel(
                 this::loadSelectedToPreview,
-                this::updateSelectedKeyframe
+                this::updateSelectedKeyframeFromPreview // Переименован для ясности
         );
 
         keyframeParametersPanel = new KeyframeParametersPanel(
-                this::applyFieldsToPreview
+                this::applyFieldsToPreview,
+                this::applyFieldsToSelectedKeyframe // <-- Передаем новый обработчик
         );
 
         animationSettingsPanel = new AnimationSettingsPanel();
@@ -99,7 +92,7 @@ public class AnimationSetupDialog extends JDialog {
                 this::startOrCancelAnimationGeneration
         );
 
-        // 2. Размещаем панели в диалоге
+        // --- Размещение панелей (без изменений) ---
         JPanel rightTopPanel = new JPanel(new BorderLayout(10, 10));
         rightTopPanel.add(keyframePreviewPanel, BorderLayout.CENTER);
         rightTopPanel.add(keyframeParametersPanel, BorderLayout.EAST);
@@ -112,107 +105,129 @@ public class AnimationSetupDialog extends JDialog {
         rightPanel.add(Box.createVerticalGlue());
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, keyframeListPanel, rightPanel);
-        splitPane.setDividerLocation(280);
-        splitPane.setResizeWeight(0.3);
+        splitPane.setDividerLocation(300);
+        splitPane.setResizeWeight(0.35);
 
         setLayout(new BorderLayout(10, 10));
         add(splitPane, BorderLayout.CENTER);
         add(generationControlPanel, BorderLayout.SOUTH);
 
-        Container contentPane = getContentPane();
-        if (contentPane instanceof JPanel) {
-            ((JPanel) contentPane).setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        }
+        ((JPanel) getContentPane()).setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
     }
 
-    /**
-     * Настраивает логику взаимодействия между панелями.
-     * (В данной реализации основная логика встроена в обработчики событий).
-     */
-    private void setupInteractionLogic() {
-        // Слушатели кнопок уже настроены при создании панелей.
-        // Логика обновления UI при выборе элемента списка находится в handleListSelectionChange.
-    }
+    // --- Обработчики событий ---
 
-
-    // --- Методы-обработчики событий от дочерних панелей ---
-
-    /** Вызывается при изменении выбора в KeyframeListPanel. */
     private void handleListSelectionChange(int selectedIndex) {
         boolean selected = (selectedIndex != -1);
         keyframePreviewPanel.setControlButtonsEnabled(selected);
         keyframeParametersPanel.setFieldsEnabled(selected);
-        // Кнопка "Удалить" обновляется внутри KeyframeListPanel
+        // Кнопки Up/Down/Remove обновляются внутри KeyframeListPanel
 
         if (selected) {
-            Keyframe selectedKeyframe = keyframeListModel.getElementAt(selectedIndex);
-            loadStateToPreviewAndFields(selectedKeyframe.getState()); // Обновляем предпросмотр и поля
-            generationControlPanel.setStatus("Выбран кадр: " + selectedKeyframe.getName());
+            try {
+                Keyframe selectedKeyframe = keyframeListModel.getElementAt(selectedIndex);
+                // Проверим на null на всякий случай
+                if (selectedKeyframe != null && selectedKeyframe.getState() != null) {
+                    loadStateToPreviewAndFields(selectedKeyframe.getState());
+                    generationControlPanel.setStatus("Выбран кадр: " + selectedKeyframe.getName());
+                } else {
+                    // Состояние невалидно, очищаем
+                    keyframePreviewPanel.loadState(null);
+                    keyframeParametersPanel.clearFields();
+                    keyframeParametersPanel.setFieldsEnabled(false); // Деактивируем поля
+                    generationControlPanel.setStatus("Ошибка: Некорректный выбранный кадр.");
+                    showError("Выбранный кадр содержит некорректные данные.");
+                }
+            } catch (ArrayIndexOutOfBoundsException e) {
+                // Индекс стал невалидным (редкая ситуация)
+                keyframePreviewPanel.loadState(null);
+                keyframeParametersPanel.clearFields();
+                keyframeParametersPanel.setFieldsEnabled(false);
+                generationControlPanel.setStatus("Ошибка: Выбранный индекс недействителен.");
+                keyframeListPanel.clearSelection();
+            }
         } else {
-            keyframePreviewPanel.loadState(null); // Очищаем предпросмотр
-            keyframeParametersPanel.clearFields(); // Очищаем поля
+            keyframePreviewPanel.loadState(null);
+            keyframeParametersPanel.clearFields();
             generationControlPanel.setStatus("Выберите кадр или добавьте новый.");
         }
     }
 
-    /** Загружает состояние в предпросмотр и поля параметров. */
+
     private void loadStateToPreviewAndFields(FractalState state) {
         keyframePreviewPanel.loadState(state);
         keyframeParametersPanel.updateFields(state);
     }
 
-    /** Добавляет текущий вид из главного окна как кадр. */
     private void addCurrentViewAsKeyframe(ActionEvent e) {
         FractalState currentState = mainViewModel.getCurrentState();
         if (currentState != null) {
             Keyframe newKeyframe = new Keyframe(currentState);
             keyframeListModel.addElement(newKeyframe);
             int newIndex = keyframeListModel.getSize() - 1;
-            keyframeListPanel.setSelectedIndex(newIndex); // Выделит и вызовет handleListSelectionChange
+            keyframeListPanel.setSelectedIndex(newIndex);
             keyframeListPanel.ensureIndexIsVisible(newIndex);
-            // Статус обновится в handleListSelectionChange
         } else {
-            showError("Не удалось получить текущее состояние фрактала.");
+            showError("Не удалось получить текущее состояние фрактала из главного окна.");
         }
     }
 
-    /** Удаляет выбранный кадр. */
     private void removeSelectedKeyframe(ActionEvent e) {
         int selectedIndex = keyframeListPanel.getSelectedIndex();
         if (selectedIndex != -1) {
-            Keyframe removed = keyframeListModel.remove(selectedIndex);
-            generationControlPanel.setStatus("Удален кадр: " + removed.getName());
-            // handleListSelectionChange будет вызван автоматически после удаления
+            try {
+                Keyframe removed = keyframeListModel.remove(selectedIndex);
+                generationControlPanel.setStatus("Удален кадр: " + removed.getName());
+                // Выделение снимется автоматически, handleListSelectionChange будет вызван
+            } catch (ArrayIndexOutOfBoundsException ex) {
+                showError("Ошибка: Не удалось удалить кадр по выбранному индексу.");
+                keyframeListPanel.clearSelection(); // Сбрасываем выбор
+            }
         } else {
             showWarning("Сначала выберите кадр для удаления.");
         }
     }
 
-    /** Загружает выбранный кадр в предпросмотр. */
     private void loadSelectedToPreview(ActionEvent e) {
         int selectedIndex = keyframeListPanel.getSelectedIndex();
         if (selectedIndex != -1) {
-            Keyframe selectedKeyframe = keyframeListModel.getElementAt(selectedIndex);
-            loadStateToPreviewAndFields(selectedKeyframe.getState());
-            generationControlPanel.setStatus("Состояние кадра '" + selectedKeyframe.getName() + "' загружено в предпросмотр.");
+            try {
+                Keyframe selectedKeyframe = keyframeListModel.getElementAt(selectedIndex);
+                if (selectedKeyframe != null && selectedKeyframe.getState() != null) {
+                    loadStateToPreviewAndFields(selectedKeyframe.getState());
+                    generationControlPanel.setStatus("Состояние кадра '" + selectedKeyframe.getName() + "' загружено в предпросмотр.");
+                } else {
+                    showError("Выбранный кадр содержит некорректные данные.");
+                    generationControlPanel.setStatus("Ошибка: Некорректный выбранный кадр.");
+                }
+            } catch (ArrayIndexOutOfBoundsException ex) {
+                showError("Ошибка: Выбранный кадр больше не доступен.");
+                keyframeListPanel.clearSelection(); // Сбрасываем выбор
+            }
         } else {
             showWarning("Сначала выберите кадр для загрузки в предпросмотр.");
         }
     }
 
     /** Обновляет выбранный кадр состоянием из предпросмотра. */
-    private void updateSelectedKeyframe(ActionEvent e) {
+    private void updateSelectedKeyframeFromPreview(ActionEvent e) {
         int selectedIndex = keyframeListPanel.getSelectedIndex();
         if (selectedIndex != -1) {
-            FractalState previewState = keyframePreviewPanel.getCurrentState();
-            if (previewState != null) {
-                String existingName = keyframeListModel.getElementAt(selectedIndex).getName();
-                Keyframe updatedKeyframe = new Keyframe(previewState, existingName);
-                keyframeListModel.set(selectedIndex, updatedKeyframe); // Заменяем
-                keyframeParametersPanel.updateFields(previewState); // Обновляем поля согласно предпросмотру
-                generationControlPanel.setStatus("Кадр '" + updatedKeyframe.getName() + "' обновлен.");
-            } else {
-                showError("Не удалось получить состояние из панели предпросмотра.");
+            try {
+                FractalState previewState = keyframePreviewPanel.getCurrentState();
+                if (previewState != null) {
+                    Keyframe selectedKeyframe = keyframeListModel.getElementAt(selectedIndex); // Может кинуть IndexOutOfBounds
+                    String existingName = selectedKeyframe.getName();
+                    Keyframe updatedKeyframe = new Keyframe(previewState, existingName);
+                    keyframeListModel.set(selectedIndex, updatedKeyframe);
+                    keyframeParametersPanel.updateFields(previewState);
+                    generationControlPanel.setStatus("Кадр '" + updatedKeyframe.getName() + "' обновлен из предпросмотра.");
+                } else {
+                    showError("Не удалось получить состояние из панели предпросмотра.");
+                }
+            } catch (ArrayIndexOutOfBoundsException ex) {
+                showError("Ошибка: Выбранный кадр больше не доступен для обновления.");
+                keyframeListPanel.clearSelection(); // Сбрасываем выбор
             }
         } else {
             showWarning("Сначала выберите кадр для обновления.");
@@ -223,17 +238,19 @@ public class AnimationSetupDialog extends JDialog {
     private void applyFieldsToPreview(ActionEvent e) {
         try {
             Object[] params = keyframeParametersPanel.getValidatedParameters();
-            // params[0] - Viewport, params[1] - Integer iterations
             Viewport newViewport = (Viewport) params[0];
             int newIterations = (Integer) params[1];
 
             FractalState currentStateInPreview = keyframePreviewPanel.getCurrentState();
-            // Если в предпросмотре ничего нет, берем дефолтные схему и функцию
-            ColorScheme scheme = (currentStateInPreview != null) ? currentStateInPreview.getColorScheme() : FractalState.createDefault().getColorScheme();
-            math.FractalFunction function = (currentStateInPreview != null) ? currentStateInPreview.getFractalFunction() : FractalState.createDefault().getFractalFunction();
+            ColorScheme scheme = (currentStateInPreview != null)
+                    ? currentStateInPreview.getColorScheme()
+                    : FractalState.createDefault().getColorScheme();
+            FractalFunction function = (currentStateInPreview != null)
+                    ? currentStateInPreview.getFractalFunction()
+                    : FractalState.createDefault().getFractalFunction();
 
             FractalState newState = new FractalState(newViewport, newIterations, scheme, function);
-            keyframePreviewPanel.loadState(newState); // Загружаем в предпросмотр
+            keyframePreviewPanel.loadState(newState);
             generationControlPanel.setStatus("Параметры из полей применены к предпросмотру.");
 
         } catch (ParseException | IllegalArgumentException | NullPointerException ex) {
@@ -241,12 +258,64 @@ public class AnimationSetupDialog extends JDialog {
         }
     }
 
-    /** Запускает или отменяет генерацию анимации. */
+    /** Применяет значения из полей параметров напрямую к выбранному ключевому кадру. */
+    private void applyFieldsToSelectedKeyframe(ActionEvent e) {
+        int selectedIndex = keyframeListPanel.getSelectedIndex();
+        if (selectedIndex == -1) {
+            showWarning("Сначала выберите кадр в списке, к которому нужно применить параметры.");
+            return;
+        }
+
+        try {
+            // 1. Получаем параметры из полей
+            Object[] params = keyframeParametersPanel.getValidatedParameters();
+            Viewport newViewport = (Viewport) params[0];
+            int newIterations = (Integer) params[1];
+
+            // 2. Получаем текущий выбранный кадр (может быть IndexOutOfBounds)
+            Keyframe selectedKeyframe = keyframeListModel.getElementAt(selectedIndex);
+            FractalState currentKeyState = selectedKeyframe.getState();
+
+            // Проверка на null для безопасности
+            if (currentKeyState == null || currentKeyState.getColorScheme() == null || currentKeyState.getFractalFunction() == null) {
+                showError("Ошибка: Состояние выбранного кадра некорректно.");
+                return;
+            }
+
+            // 3. Создаем новое состояние
+            FractalState newStateForKeyframe = new FractalState(
+                    newViewport,
+                    newIterations,
+                    currentKeyState.getColorScheme(), // Схема из кадра
+                    currentKeyState.getFractalFunction() // Функция из кадра
+            );
+
+            // 4. Создаем новый объект Keyframe
+            Keyframe updatedKeyframe = new Keyframe(newStateForKeyframe, selectedKeyframe.getName());
+
+            // 5. Заменяем старый кадр на новый в модели списка
+            keyframeListModel.set(selectedIndex, updatedKeyframe);
+
+            // 6. Обновляем UI
+            generationControlPanel.setStatus("Параметры применены к кадру '" + updatedKeyframe.getName() + "'.");
+            // Поля параметров уже показывают введенные значения.
+            // Предпросмотр не меняем, так как применили напрямую к кадру.
+
+        } catch (ParseException | IllegalArgumentException | NullPointerException ex) {
+            showError("Ошибка ввода параметров: " + ex.getMessage());
+        } catch (ArrayIndexOutOfBoundsException ex) {
+            // Это может произойти, если selectedIndex стал невалидным между проверкой и использованием
+            showError("Ошибка: Выбранный кадр больше не доступен.");
+            keyframeListPanel.clearSelection(); // <-- Исправлено: вызываем метод у KeyframeListPanel
+        }
+    }
+
+
     private void startOrCancelAnimationGeneration(ActionEvent e) {
         if (animationWorker != null && !animationWorker.isDone()) {
             animationWorker.cancel(true);
             generationControlPanel.setStatus("Запрос на отмену генерации...");
-            generationControlPanel.setGenerateButtonEnabled(false); // Блокируем на время отмены
+            generationControlPanel.setGenerateButtonEnabled(false);
             return;
         }
 
@@ -256,19 +325,25 @@ public class AnimationSetupDialog extends JDialog {
         }
 
         final List<Keyframe> keyframes = new ArrayList<>(keyframeListModel.getSize());
-        for (int i = 0; i < keyframeListModel.getSize(); i++) keyframes.add(keyframeListModel.getElementAt(i));
+        for (int i = 0; i < keyframeListModel.getSize(); i++) {
+            try {
+                keyframes.add(keyframeListModel.getElementAt(i));
+            } catch (ArrayIndexOutOfBoundsException ex) {
+                showError("Ошибка чтения списка кадров. Попробуйте снова.");
+                return;
+            }
+        }
         final double durationPerSegment = animationSettingsPanel.getDurationPerSegment();
         final int fps = animationSettingsPanel.getFps();
 
         JFileChooser fileChooser = new JFileChooser();
-        // ... (настройка fileChooser, проверка перезаписи - без изменений) ...
         fileChooser.setDialogTitle("Сохранить видео анимации как...");
         fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("MP4 Video File (*.mp4)", "mp4"));
         fileChooser.setSelectedFile(new File("fractal_animation.mp4"));
 
         int userSelection = fileChooser.showSaveDialog(this);
         if (userSelection != JFileChooser.APPROVE_OPTION) {
-            generationControlPanel.setStatus("Сохранение отменено.");
+            generationControlPanel.setStatus("Сохранение видео отменено.");
             return;
         }
         final File outputFile = ensureMp4Extension(fileChooser.getSelectedFile());
@@ -278,49 +353,54 @@ public class AnimationSetupDialog extends JDialog {
                     "Файл '" + outputFile.getName() + "' уже существует.\nПерезаписать его?",
                     "Подтверждение перезаписи", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
             if (overwriteChoice != JOptionPane.YES_OPTION) {
-                generationControlPanel.setStatus("Сохранение отменено.");
+                generationControlPanel.setStatus("Сохранение видео отменено.");
                 return;
             }
         }
 
-
+        // --- Настройка UI перед запуском SwingWorker ---
         generationControlPanel.setProgress(0);
         generationControlPanel.setProgressVisible(true);
         generationControlPanel.setStatus("Подготовка к генерации...");
         generationControlPanel.setGenerateButtonText("Отмена");
-        generationControlPanel.setGenerateButtonEnabled(true); // Кнопка "Отмена" активна
+        generationControlPanel.setGenerateButtonEnabled(true);
+        setUIEnabled(false); // Блокируем UI
 
-        // Блокируем UI на время генерации
-        setUIEnabled(false);
-
+        // --- Создание и запуск SwingWorker ---
         animationWorker = new SwingWorker<Void, String>() {
             private long startTime;
-            @Override protected Void doInBackground() throws Exception { /* ... код без изменений ... */
+            @Override
+            protected Void doInBackground() throws Exception {
                 startTime = System.currentTimeMillis();
                 animationService.createAndSaveAnimation(
                         keyframes, fps, durationPerSegment, outputFile,
-                        progress -> publishProgress(progress), // Используем отдельный метод
-                        message -> publish(message)
+                        progress -> publishProgress(progress), // Колбэк прогресса
+                        this::publish // Колбэк статуса
                 );
                 return null;
             }
-            @Override protected void process(List<String> chunks) { /* ... код без изменений ... */
+
+            @Override
+            protected void process(List<String> chunks) { // Обработка сообщений статуса в EDT
                 if (!isCancelled() && !chunks.isEmpty()) {
                     generationControlPanel.setStatus(chunks.get(chunks.size() - 1));
                 }
             }
-            @Override protected void done() { /* ... код обработки done() с небольшими изменениями ... */
+
+            @Override
+            protected void done() { // Выполняется в EDT после завершения/отмены/ошибки doInBackground
                 try {
                     if (!isCancelled()) {
-                        get();
+                        get(); // Проверяем наличие исключений в doInBackground
                         long endTime = System.currentTimeMillis();
-                        generationControlPanel.setStatus(String.format("Генерация завершена успешно! (%.1f сек)", (endTime - startTime) / 1000.0));
-                        showInfo("Анимация успешно сохранена в файл:\n" + outputFile.getAbsolutePath(), "Генерация завершена");
+                        generationControlPanel.setStatus(String.format(java.util.Locale.US,
+                                "Генерация завершена успешно! (%.1f сек)", (endTime - startTime) / 1000.0));
                         generationControlPanel.setProgress(100);
+                        showInfo("Анимация успешно сохранена в файл:\n" + outputFile.getAbsolutePath(), "Генерация завершена");
                     } else {
                         generationControlPanel.setStatus("Генерация отменена пользователем.");
                         generationControlPanel.setProgress(0);
-                        deleteOutputFileIfExists(outputFile);
+                        deleteOutputFileIfExists(outputFile); // Удаляем недоделанный файл
                     }
                 } catch (InterruptedException e) {
                     generationControlPanel.setStatus("Генерация прервана.");
@@ -334,20 +414,22 @@ public class AnimationSetupDialog extends JDialog {
                     showError("Произошла ошибка во время генерации анимации:\n" + cause.getMessage());
                     cause.printStackTrace();
                     deleteOutputFileIfExists(outputFile);
-                } catch (java.util.concurrent.CancellationException e) {
+                } catch (CancellationException e) { // Используем java.util.concurrent.CancellationException
                     generationControlPanel.setStatus("Генерация отменена.");
                     generationControlPanel.setProgress(0);
                     deleteOutputFileIfExists(outputFile);
                 } finally {
                     generationControlPanel.setGenerateButtonText("Генерировать видео...");
-                    generationControlPanel.setGenerateButtonEnabled(true); // Всегда разблокируем
+                    generationControlPanel.setGenerateButtonEnabled(true);
+                    // Скрываем прогресс только если не было успеха
                     if (!generationControlPanel.getStatus().contains("успешно")) {
                         generationControlPanel.setProgressVisible(false);
                     }
                     setUIEnabled(true); // Разблокируем UI
-                    animationWorker = null;
+                    animationWorker = null; // Сбрасываем ссылку на worker
                 }
             }
+
             // Метод для обновления прогресса в EDT
             private void publishProgress(double progress) {
                 SwingUtilities.invokeLater(() -> {
@@ -362,31 +444,41 @@ public class AnimationSetupDialog extends JDialog {
 
     /** Блокирует/разблокирует основные элементы управления UI во время генерации. */
     private void setUIEnabled(boolean enabled) {
-        keyframeListPanel.setEnabled(enabled); // Блокируем всю панель списка
-        keyframePreviewPanel.setEnabled(enabled); // Блокируем панель предпросмотра
-        keyframeParametersPanel.setEnabled(enabled); // Блокируем панель параметров
-        animationSettingsPanel.setEnabled(enabled); // Блокируем панель настроек
-        // Кнопка генерации управляется отдельно
+        keyframeListPanel.setEnabled(enabled);
+        keyframePreviewPanel.setEnabled(enabled);
+        keyframeParametersPanel.setEnabled(enabled);
+        animationSettingsPanel.setEnabled(enabled);
+        // При включении восстанавливаем состояние кнопок в зависимости от выбора
+        if (enabled) {
+            int selectedIndex = keyframeListPanel.getSelectedIndex();
+            keyframePreviewPanel.setControlButtonsEnabled(selectedIndex != -1);
+            keyframeParametersPanel.setFieldsEnabled(selectedIndex != -1);
+            // Состояние кнопок Вверх/Вниз управляется внутри KeyframeListPanel
+            keyframeListPanel.updateButtonStates();
+        }
+        // Кнопка генерации/отмены управляется отдельно
     }
 
-
-    /** Вспомогательный метод для удаления файла. */
     private void deleteOutputFileIfExists(File file) {
         if (file != null && file.exists()) {
-            if (!file.delete()) { System.err.println("Не удалось удалить файл: " + file.getAbsolutePath()); }
-            else { System.out.println("Файл удален: " + file.getAbsolutePath()); }
+            System.out.print("Попытка удаления файла " + file.getAbsolutePath() + "... ");
+            if (!file.delete()) {
+                System.err.println("Не удалось удалить.");
+            } else {
+                System.out.println("Удален.");
+            }
         }
     }
 
-    /** Гарантирует расширение .mp4. */
     private File ensureMp4Extension(File file) {
-        // ... (код без изменений) ...
         String path = file.getAbsolutePath();
         String lowerPath = path.toLowerCase();
         if (!lowerPath.endsWith(".mp4")) {
             int dotIndex = path.lastIndexOf('.');
             int slashIndex = path.lastIndexOf(File.separatorChar);
-            if (dotIndex > slashIndex) path = path.substring(0, dotIndex);
+            if (dotIndex > slashIndex) {
+                path = path.substring(0, dotIndex);
+            }
             return new File(path + ".mp4");
         }
         return file;
@@ -394,7 +486,7 @@ public class AnimationSetupDialog extends JDialog {
 
     /** Показывает диалоговое окно. */
     public void display() {
-        // Сброс UI к начальному состоянию
+        // Сброс UI
         generationControlPanel.setStatus("Выберите кадр или добавьте новый.");
         generationControlPanel.setProgressVisible(false);
         generationControlPanel.setProgress(0);
@@ -403,9 +495,9 @@ public class AnimationSetupDialog extends JDialog {
         keyframePreviewPanel.setControlButtonsEnabled(false);
         keyframeParametersPanel.setFieldsEnabled(false);
         keyframeParametersPanel.clearFields();
-        keyframeListModel.clear(); // Очищаем список кадров при каждом открытии
-        keyframePreviewPanel.loadState(null); // Очищаем предпросмотр
-        setUIEnabled(true); // Убедимся, что UI разблокирован
+        keyframeListModel.clear();
+        keyframePreviewPanel.loadState(null);
+        setUIEnabled(true);
         setVisible(true);
     }
 
@@ -418,8 +510,8 @@ public class AnimationSetupDialog extends JDialog {
             if (choice == JOptionPane.NO_OPTION) return;
             animationWorker.cancel(true);
         }
-        keyframePreviewPanel.shutdownRenderer(); // Останавливаем рендерер предпросмотра
-        dispose(); // Закрываем диалог
+        keyframePreviewPanel.shutdownRenderer();
+        dispose();
     }
 
     // Вспомогательные методы для сообщений

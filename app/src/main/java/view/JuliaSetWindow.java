@@ -9,7 +9,7 @@ import model.Viewport;
 import render.FractalRenderer;
 import utils.ComplexNumber;
 import viewmodel.FractalViewModel;
-import services.FileService; // Импорт для возможного меню сохранения
+// import services.FileService; // Закомментировано, так как меню не используется
 
 import javax.swing.*;
 import java.awt.*;
@@ -50,21 +50,21 @@ public class JuliaSetWindow extends JFrame {
      */
     public JuliaSetWindow(JFrame ownerFrame, ComplexNumber c, ColorScheme initialColorScheme, int initialIterations) {
         // Формируем заголовок окна, отображающий значение 'c'
-        super("Julia Set Explorer (c = " + String.format("%.4f %s %.4fi",
+        super("Julia Set Explorer (c = " + String.format(java.util.Locale.US, "%.4f %s %.4fi", // Используем Locale.US для точки
                 c.getReal(), c.getImaginary() >= 0 ? "+" : "-", Math.abs(c.getImaginary())) + ")");
         this.c = c;
 
         // Создаем НЕЗАВИСИМЫЕ экземпляры рендерера и ViewModel для этого окна
         this.renderer = new FractalRenderer();
-        this.viewModel = new FractalViewModel(renderer);
+        this.viewModel = new FractalViewModel(renderer); // Используем конструктор по умолчанию для истории Undo
 
         // Создаем начальное состояние специально для множества Жюлиа
         FractalState juliaState = createInitialJuliaState(c, initialColorScheme, initialIterations);
         // Загружаем это состояние в ViewModel окна Жюлиа. Это сбрасывает историю Undo.
         this.viewModel.loadState(juliaState);
 
-        // Создаем панель отрисовки, передавая ей НЕЗАВИСИМЫЕ viewModel и renderer
-        this.fractalPanel = new FractalPanel(viewModel, renderer);
+        // Создаем панель отрисовки, передавая null для MainFrame
+        this.fractalPanel = new FractalPanel(viewModel, renderer, null); // <-- Передаем null
 
         // Настройка окна
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE); // Закрывать только это окно, не всё приложение
@@ -82,19 +82,19 @@ public class JuliaSetWindow extends JFrame {
              */
             @Override
             public void windowClosing(WindowEvent e) {
-                System.out.println("Shutting down Julia set renderer...");
+                System.out.println("Завершение работы рендерера окна Жюлиа...");
                 // Останавливаем ExecutorService рендерера этого окна
                 renderer.shutdown();
-                System.out.println("Julia set renderer shut down for c=" + JuliaSetWindow.this.c);
+                System.out.println("Рендерер окна Жюлиа остановлен для c=" + JuliaSetWindow.this.c);
+                // dispose() вызовется автоматически после выполнения всех WindowListener'ов при DISPOSE_ON_CLOSE
             }
         });
 
         // Опционально: можно добавить собственное меню для окна Жюлиа
-        // Например, только для сохранения изображения
         // MenuBar juliaMenuBar = createJuliaMenuBar();
         // setJMenuBar(juliaMenuBar);
 
-        System.out.println("Julia Set window created for c = " + c);
+        System.out.println("Окно множества Жюлиа создано для c = " + c);
     }
 
     /**
@@ -115,36 +115,10 @@ public class JuliaSetWindow extends JFrame {
         FractalFunction juliaFunction = new JuliaFunction(cParam);
 
         // Создаем объект состояния
-        return new FractalState(juliaViewport, maxIterations, colorScheme, juliaFunction);
+        // Убедимся, что итерации положительные
+        int validIterations = Math.max(1, maxIterations);
+        return new FractalState(juliaViewport, validIterations, colorScheme, juliaFunction);
     }
-
-    // Опционально: Метод для создания упрощенного меню для окна Жюлиа
-    /*
-    private MenuBar createJuliaMenuBar() {
-        // Создаем FileService локально или получаем извне, если нужно
-        FileService localFileService = new FileService();
-        // Создаем MenuBar, передавая *локальные* viewModel, fractalPanel и это окно (this)
-        MenuBar juliaMenu = new MenuBar(this.viewModel, localFileService, this.fractalPanel, this);
-
-        // Удаляем ненужные пункты меню (например, Load State, Edit->Undo, View->Scheme/Iterations)
-        // Меню File (индекс 0)
-        JMenu fileMenu = juliaMenu.getMenu(0);
-        if (fileMenu != null) {
-            // Удаляем Load, Save State, Separator, Exit (оставляем только Save As Image)
-             if (fileMenu.getItemCount() > 2) fileMenu.remove(0); // Load
-             if (fileMenu.getItemCount() > 2) fileMenu.remove(0); // Save State (из Save As)
-             if (fileMenu.getItemCount() > 1) fileMenu.remove(1); // Separator
-             if (fileMenu.getItemCount() > 1) fileMenu.remove(1); // Exit
-        }
-        // Удаляем меню Edit (индекс 1)
-        if (juliaMenu.getMenuCount() > 1) juliaMenu.remove(1);
-        // Удаляем меню View (индекс 1 после удаления Edit)
-        if (juliaMenu.getMenuCount() > 1) juliaMenu.remove(1);
-
-        return juliaMenu;
-    }
-    */
-
 
     /**
      * Делает окно множества Жюлиа видимым.
@@ -153,7 +127,12 @@ public class JuliaSetWindow extends JFrame {
      * первый запуск рендеринга.
      */
     public void display() {
-        setVisible(true);
-        // Первый рендер запустится автоматически панелью FractalPanel
+        // Убедимся, что окно показывается в потоке EDT
+        if (SwingUtilities.isEventDispatchThread()) {
+            setVisible(true);
+        } else {
+            SwingUtilities.invokeLater(() -> setVisible(true));
+        }
+        // Первый рендер запустится автоматически панелью FractalPanel после отображения
     }
 }
