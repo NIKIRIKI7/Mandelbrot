@@ -66,7 +66,6 @@ public class CoordinateConverter {
         double imaginary = viewport.getMaxY() - proportionY * viewport.getHeight();
 
         return new ComplexNumber(real, imaginary);
-
         /* --- Пример использования внешнего класса из JAR ---
            try {
                // Адаптируйте вызов под API вашего конвертера

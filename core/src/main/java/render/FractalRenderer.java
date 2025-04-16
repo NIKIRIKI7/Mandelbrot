@@ -173,35 +173,43 @@ public class FractalRenderer {
         }
 
         /**
-         * Renders a single tile of the fractal image.
-         *
-         * @param tile        The tile to render.
-         * @param state       The fractal state.
-         * @param imageWidth  The total image width.
-         * @param imageHeight The total image height.
-         * @param targetImage The image to render into.
-         */
-        private static void renderTile(Tile tile, FractalState state, int imageWidth, int imageHeight, BufferedImage targetImage) {
-            Viewport viewport = state.getViewport();
-            int maxIterations = state.getMaxIterations();
-            ColorScheme colorScheme = state.getColorScheme();
+     * Renders a single tile of the fractal image using the FractalFunction from the state.
+     *
+     * @param tile        The tile to render.
+     * @param state       The fractal state containing viewport, iterations, color scheme, and fractal function.
+     * @param imageWidth  The total image width.
+     * @param imageHeight The total image height.
+     * @param targetImage The image to render into.
+     */
+    private static void renderTile(Tile tile, FractalState state, int imageWidth, int imageHeight, BufferedImage targetImage) {
+        Viewport viewport = state.getViewport();
+        int maxIterations = state.getMaxIterations();
+        ColorScheme colorScheme = state.getColorScheme();
+        FractalFunction fractalFunction = state.getFractalFunction(); // <-- Получаем функцию из состояния
 
-            for (int y = tile.startY; y < tile.startY + tile.height; ++y) {
-                if (Thread.currentThread().isInterrupted()) return;
-                for (int x = tile.startX; x < tile.startX + tile.width; ++x) {
-                    ComplexNumber c = CoordinateConverter.screenToComplex(x, y, imageWidth, imageHeight, viewport);
-                    if (c == null) continue;
+        for (int y = tile.startY; y < tile.startY + tile.height; ++y) {
+            if (Thread.currentThread().isInterrupted()) return;
+            for (int x = tile.startX; x < tile.startX + tile.width; ++x) {
+                // Преобразуем пиксельные координаты в комплексное число (это будет и z0 и c для Мандельброта)
+                ComplexNumber pointCoords = CoordinateConverter.screenToComplex(x, y, imageWidth, imageHeight, viewport);
+                if (pointCoords == null) continue; // Пропускаем, если конвертация не удалась
 
-                    int iterations = calculateMandelbrotIterations(c, maxIterations);
-                    Color color = colorScheme.getColor(iterations, maxIterations);
+                // Вычисляем итерации, используя функцию из состояния
+                // Для Мандельброта: z0=0 (реализовано в MandelbrotFunction), c=pointCoords
+                // Для Жюлиа: z0=pointCoords, c=константа (реализовано в JuliaFunction)
+                // Передаем pointCoords как z0 и как c. Конкретная функция решит, что использовать.
+                int iterations = fractalFunction.calculateIterations(pointCoords, pointCoords, maxIterations);
 
-                    if (x >= 0 && x < targetImage.getWidth() && y >= 0 && y < targetImage.getHeight()) {
-                        targetImage.setRGB(x, y, color.getRGB());
-                    }
+                // Получаем цвет на основе итераций
+                Color color = colorScheme.getColor(iterations, maxIterations);
+
+                // Устанавливаем пиксель в изображении (с проверкой границ)
+                if (x >= 0 && x < targetImage.getWidth() && y >= 0 && y < targetImage.getHeight()) {
+                    targetImage.setRGB(x, y, color.getRGB());
                 }
             }
         }
-
+    }
         /**
          * Calculates iterations for a point in the Mandelbrot set.
          *

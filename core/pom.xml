@@ -4,33 +4,38 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <?m2e ignore?>
+        <!-- Reference to the parent POM -->
         <groupId>com.example</groupId>
         <artifactId>mandelbrot-app-parent</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>mandelbrot-core</artifactId>
+    <artifactId>mandelbrot-core</artifactId> <!-- Artifact ID for this module -->
     <name>Mandelbrot Core Logic</name>
+    <packaging>jar</packaging> <!-- Default is jar, explicitly stating is fine -->
 
     <dependencies>
-        <!-- Зависимость от установленного JAR -->
+        <!-- Dependency on the external converter JAR -->
+        <!-- Version is managed in the parent POM -->
         <dependency>
-            <groupId>com.local</groupId>
+            <groupId>com.converter</groupId> <!-- Matches parent's management -->
             <artifactId>converter</artifactId>
             <version>1.0</version>
         </dependency>
 
-        <!-- Пример других зависимостей, если они есть -->
+        <!-- Test Dependencies -->
+        <!-- Version and scope are managed in the parent POM -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
-            <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <!-- Build section is generally inherited from parent -->
+    <!-- Add specific build configurations for this module if needed -->
+
 </project>
