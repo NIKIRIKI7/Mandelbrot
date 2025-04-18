@@ -77,24 +77,7 @@ z_{n+1} = z_n^2 + c
 - **AnimationService**: 
   - Генерация анимаций через JCodec.
   - Интерполяция состояний между ключевыми кадрами.
-
-### 3.3. Взаимодействие компонентов
-1. **Пример сценария зума**:
-   - Пользователь выделяет область на `FractalPanel` → 
-   - `MouseZoomListener` вызывает `viewModel.zoomOnScreenRect()` → 
-   - `ZoomCommand` выполняется, обновляет `FractalState` → 
-   - `FractalViewModel` уведомляет UI через `PropertyChange` → 
-   - `FractalPanel` запускает рендеринг через `FractalRenderer` → 
-   - Изображение обновляется в потоке EDT.
-
-```mermaid
-graph TD
-    A["Пользователь выделяет область"] --> B["MouseZoomListener вызывает zoomOnScreenRect()"]
-    B --> C["ZoomCommand обновляет FractalState"]
-    C --> D["FractalViewModel уведомляет UI"]
-    D --> E["FractalPanel запускает рендеринг"]
-    E --> F["Изображение обновляется"]
-```
+  
 ### 3.3. Взаимодействие компонентов
 1. **Пример сценария зума**:
    - Пользователь выделяет область на `FractalPanel` → 
