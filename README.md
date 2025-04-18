@@ -54,11 +54,11 @@
 
 ```mermaid
 graph TD
-    A[Пользователь выделяет область] --> B[MouseZoomListener вызывает zoomOnScreenRect()]
-    B --> C[ZoomCommand обновляет FractalState]
-    C --> D[FractalViewModel уведомляет UI]
-    D --> E[FractalPanel запускает рендеринг]
-    E --> F[Изображение обновляется]
+    A["Пользователь выделяет область"] --> B["MouseZoomListener вызывает zoomOnScreenRect()"]
+    B --> C["ZoomCommand обновляет FractalState"]
+    C --> D["FractalViewModel уведомляет UI"]
+    D --> E["FractalPanel запускает рендеринг"]
+    E --> F["Изображение обновляется"]
 ```
 ### 3.3. Взаимодействие компонентов
 1. **Пример сценария зума**:
@@ -71,11 +71,11 @@ graph TD
 
 ```mermaid
 graph TD
-    A[Пользователь выделяет область] --> B[MouseZoomListener вызывает zoomOnScreenRect()]
-    B --> C[ZoomCommand обновляет FractalState]
-    C --> D[FractalViewModel уведомляет UI]
-    D --> E[FractalPanel запускает рендеринг]
-    E --> F[Изображение обновляется]
+    A["Пользователь выделяет область"] --> B["MouseZoomListener вызывает zoomOnScreenRect()"]
+    B --> C["ZoomCommand обновляет FractalState"]
+    C --> D["FractalViewModel уведомляет UI"]
+    D --> E["FractalPanel запускает рендеринг"] 
+    E --> F["Изображение обновляется"]
 ```
 
 2. **Пример панорамирования**:
@@ -88,11 +88,11 @@ graph TD
 
 ```mermaid
 graph TD
-    A[Пользователь перетаскивает область] --> B[MousePanListener вызывает panOnScreenDelta()]
-    B --> C[PanCommand обновляет FractalState]
-    C --> D[FractalViewModel уведомляет UI]
-    D --> E[FractalPanel запускает рендеринг]
-    E --> F[Изображение обновляется]
+    A["Пользователь перетаскивает область"] --> B["MousePanListener вызывает panOnScreenDelta()"]
+    B --> C["PanCommand обновляет FractalState"]
+    C --> D["FractalViewModel уведомляет UI"]
+    D --> E["FractalPanel запускает рендеринг"]
+    E --> F["Изображение обновляется"]
 ```
 
 3. **Генерация анимации**:
