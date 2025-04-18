@@ -16,6 +16,7 @@ buildNumber.properties
 *jrebel*.jar
 .jrebel/
 
+*.txt
 # Ignore log files
 *.log
 logs/
