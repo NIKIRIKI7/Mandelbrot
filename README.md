@@ -44,7 +44,7 @@ z_{n+1} = z_n^2 + c
 
 ### 3.2. Структура компонентов
 #### 3.2.1. View (пакет `view`)
-- **MainFrame**: Основное окно приложения, содержит `FractalPanel` и `StatusBar`. Использует MVC.
+- **MainFrame**: Основное окно приложения, содержит `FractalPanel` и `StatusBar`. Использует MVVM.
 - **FractalPanel**: Кастомный компонент для отображения фрактала, наследуется от `JPanel`. 
 - **StatusBar**: Панель внизу окна, отображает статус и прогресс рендеринга.
 - **JuliaSetWindow**: Окно для множества Жюлиа с собственными `FractalViewModel`, `FractalRenderer` и `FractalPanel`.
