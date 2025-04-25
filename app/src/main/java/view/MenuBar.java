@@ -78,7 +78,7 @@ public class MenuBar extends JMenuBar {
     }
 
     private void createFileMenu() {
-        JMenu fileMenu = new JMenu("Файл"); // Локализация
+        JMenu fileMenu = new JMenu("Файл");
         fileMenu.setMnemonic(KeyEvent.VK_F);
 
         JMenuItem loadItem = new JMenuItem("Загрузить состояние...");
@@ -86,21 +86,11 @@ public class MenuBar extends JMenuBar {
         loadItem.addActionListener(e -> loadFractal());
         fileMenu.add(loadItem);
 
-        JMenu saveAsMenu = new JMenu("Сохранить как...");
+        JMenuItem saveItem = new JMenuItem("Сохранить...");
+        saveItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S, ActionEvent.CTRL_MASK));
+        saveItem.addActionListener(e -> saveUsingFileChooser());
+        fileMenu.add(saveItem);
 
-        JMenuItem saveFracItem = new JMenuItem("Состояние фрактала (.frac)");
-        saveFracItem.addActionListener(e -> saveFractal());
-        saveAsMenu.add(saveFracItem);
-
-        JMenuItem savePngItem = new JMenuItem("Изображение (.png)");
-        savePngItem.addActionListener(e -> saveImage("PNG"));
-        saveAsMenu.add(savePngItem);
-
-        JMenuItem saveJpegItem = new JMenuItem("Изображение (.jpg)");
-        saveJpegItem.addActionListener(e -> saveImage("JPEG"));
-        saveAsMenu.add(saveJpegItem);
-
-        fileMenu.add(saveAsMenu);
         fileMenu.addSeparator();
 
         JMenuItem exitItem = new JMenuItem("Выход");
@@ -113,6 +103,76 @@ public class MenuBar extends JMenuBar {
 
         add(fileMenu);
     }
+
+    private void saveUsingFileChooser() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Сохранить файл");
+
+        FileNameExtensionFilter fracFilter = new FileNameExtensionFilter("Файл состояния (*.frac)", "frac");
+        FileNameExtensionFilter pngFilter = new FileNameExtensionFilter("Изображение PNG (*.png)", "png");
+        FileNameExtensionFilter jpgFilter = new FileNameExtensionFilter("Изображение JPEG (*.jpg)", "jpg");
+
+        fileChooser.addChoosableFileFilter(fracFilter);
+        fileChooser.addChoosableFileFilter(pngFilter);
+        fileChooser.addChoosableFileFilter(jpgFilter);
+        fileChooser.setAcceptAllFileFilterUsed(false);
+        fileChooser.setFileFilter(fracFilter); // По умолчанию
+
+        int result = fileChooser.showSaveDialog(ownerFrame);
+        StatusBar statusBar = ownerFrame.getStatusBar();
+
+        if (result != JFileChooser.APPROVE_OPTION) {
+            statusBar.setStatus("Сохранение отменено.");
+            return;
+        }
+
+        File selectedFile = fileChooser.getSelectedFile();
+        String extension = "frac";
+        String format = null;
+
+        javax.swing.filechooser.FileFilter selectedFilter = fileChooser.getFileFilter();
+        if (selectedFilter == pngFilter) {
+            extension = "png";
+            format = "PNG";
+        } else if (selectedFilter == jpgFilter) {
+            extension = "jpg";
+            format = "JPEG";
+        }
+
+        // Добавляем расширение, если его нет
+        if (!selectedFile.getName().toLowerCase().endsWith("." + extension)) {
+            selectedFile = new File(selectedFile.getAbsolutePath() + "." + extension);
+        }
+
+        if (format == null) {
+            // Сохраняем состояние
+            statusBar.setStatus("Сохранение состояния в файл " + selectedFile.getName() + "...");
+            try {
+                fileService.saveFractalState(viewModel.getCurrentState(), selectedFile);
+                statusBar.setStatus("Состояние успешно сохранено в '" + selectedFile.getName() + "'.");
+            } catch (IOException ex) {
+                showErrorDialog("Ошибка сохранения", "Не удалось сохранить состояние: " + ex.getMessage());
+                statusBar.setStatus("Ошибка: " + ex.getMessage());
+            }
+        } else {
+            // Сохраняем изображение
+            BufferedImage image = fractalPanel.getCurrentImage();
+            if (image == null) {
+                showErrorDialog("Ошибка сохранения", "Нет изображения для сохранения.");
+                statusBar.setStatus("Ошибка: Изображение не готово.");
+                return;
+            }
+            statusBar.setStatus("Сохранение изображения в файл " + selectedFile.getName() + "...");
+            try {
+                fileService.saveImage(image, viewModel.getCurrentState(), selectedFile, format);
+                statusBar.setStatus("Изображение успешно сохранено в '" + selectedFile.getName() + "'.");
+            } catch (Exception ex) {
+                showErrorDialog("Ошибка сохранения", "Не удалось сохранить изображение: " + ex.getMessage());
+                statusBar.setStatus("Ошибка: " + ex.getMessage());
+            }
+        }
+    }
+
 
     private void createEditMenu() {
         JMenu editMenu = new JMenu("Правка"); // Локализация
