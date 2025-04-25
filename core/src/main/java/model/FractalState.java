@@ -1,6 +1,8 @@
 // File: core/src/main/java/model/FractalState.java
 package model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import math.FractalFunction; // <-- Добавлен импорт
 import math.MandelbrotFunction; // <-- Добавлен импорт для дефолтной функции
 import java.io.Serializable;
@@ -27,73 +29,37 @@ public final class FractalState implements Serializable {
      */
     private static final long serialVersionUID = 2L;
 
-    /** Текущая область просмотра комплексной плоскости. */
-    private final Viewport viewport;
-    /** Максимальное количество итераций для расчета. */
-    private final int maxIterations;
-    /** Активная цветовая схема. */
-    private final ColorScheme colorScheme;
-    /** Функция, используемая для расчета количества итераций фрактала. */
-    private final FractalFunction fractalFunction;
+    private Viewport viewport;
+    private int maxIterations;
+    private ColorScheme colorScheme;
+    private FractalFunction fractalFunction;
 
-    /** Экземпляр функции Мандельброта по умолчанию, используемый в {@link #createDefault()}. */
     private static final FractalFunction DEFAULT_FRACTAL_FUNCTION = new MandelbrotFunction();
 
-    /**
-     * Создает новый экземпляр состояния фрактала с заданными параметрами.
-     * Выполняет проверку аргументов на null и корректность {@code maxIterations}.
-     *
-     * @param viewport        Текущая область просмотра. Не может быть null.
-     * @param maxIterations   Максимальное количество итераций. Должно быть положительным числом (> 0).
-     * @param colorScheme     Цветовая схема для рендеринга. Не может быть null.
-     * @param fractalFunction Функция расчета фрактала. Не может быть null.
-     * @throws NullPointerException если {@code viewport}, {@code colorScheme} или {@code fractalFunction} равны null.
-     * @throws IllegalArgumentException если {@code maxIterations} не является положительным числом.
-     */
-    public FractalState(Viewport viewport, int maxIterations, ColorScheme colorScheme, FractalFunction fractalFunction) {
-        this.viewport = Objects.requireNonNull(viewport, "Viewport не может быть null");
-        this.colorScheme = Objects.requireNonNull(colorScheme, "Цветовая схема не может быть null");
-        this.fractalFunction = Objects.requireNonNull(fractalFunction, "Функция фрактала не может быть null");
-
-        if (maxIterations <= 0) {
-            throw new IllegalArgumentException("Максимальное количество итераций должно быть положительным");
-        }
+    @JsonCreator
+    public FractalState(
+        @JsonProperty("viewport") Viewport viewport,
+        @JsonProperty("maxIterations") int maxIterations,
+        @JsonProperty("colorScheme") ColorScheme colorScheme,
+        @JsonProperty("fractalFunction") FractalFunction fractalFunction
+    ) {
+        this.viewport = viewport;
         this.maxIterations = maxIterations;
+        this.colorScheme = colorScheme;
+        this.fractalFunction = fractalFunction;
     }
 
-    // --- Геттеры ---
+    public Viewport getViewport() { return viewport; }
+    public void setViewport(Viewport viewport) { this.viewport = viewport; }
 
-    /**
-     * Возвращает текущую область просмотра.
-     * @return {@link Viewport} состояния.
-     */
-    public Viewport getViewport() {
-        return viewport;
-    }
+    public int getMaxIterations() { return maxIterations; }
+    public void setMaxIterations(int maxIterations) { this.maxIterations = maxIterations; }
 
-    /**
-     * Возвращает максимальное количество итераций.
-     * @return Максимальное количество итераций.
-     */
-    public int getMaxIterations() {
-        return maxIterations;
-    }
+    public ColorScheme getColorScheme() { return colorScheme; }
+    public void setColorScheme(ColorScheme colorScheme) { this.colorScheme = colorScheme; }
 
-    /**
-     * Возвращает активную цветовую схему.
-     * @return {@link ColorScheme} состояния.
-     */
-    public ColorScheme getColorScheme() {
-        return colorScheme;
-    }
-
-    /**
-     * Возвращает активную функцию расчета фрактала.
-     * @return {@link FractalFunction} состояния.
-     */
-    public FractalFunction getFractalFunction() {
-        return fractalFunction;
-    }
+    public FractalFunction getFractalFunction() { return fractalFunction; }
+    public void setFractalFunction(FractalFunction fractalFunction) { this.fractalFunction = fractalFunction; }
 
     // --- Методы для создания нового состояния с изменениями (immutable pattern) ---
 

@@ -4,6 +4,9 @@ package model;
 import java.awt.Color;
 import java.io.Serializable;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
 /**
  * Функциональный интерфейс, определяющий стратегию преобразования
  * количества итераций, полученных при расчете точки фрактала, в цвет.
@@ -20,6 +23,11 @@ import java.io.Serializable;
  * </p>
  */
 @FunctionalInterface
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = NonlinearRGBScheme.class, name = "NonlinearRGB"),
+    @JsonSubTypes.Type(value = GrayscaleScheme.class, name = "Grayscale")
+})
 public interface ColorScheme extends Serializable {
     /**
      * Версия для сериализации. Необходимо явно указывать для всех

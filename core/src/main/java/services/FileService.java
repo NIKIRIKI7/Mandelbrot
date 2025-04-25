@@ -10,6 +10,9 @@ import java.awt.image.BufferedImage;
 import java.io.*;
 import java.util.Objects;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+
 /**
  * Сервисный класс (Фасад), предоставляющий операции для работы с файлами,
  * связанные с приложением визуализации фракталов.
@@ -34,80 +37,14 @@ public class FileService {
     private static final String PNG_EXTENSION = ".png";
 
 
-    /**
-     * Сохраняет переданное состояние фрактала {@link FractalState} в указанный файл
-     * с использованием механизма сериализации Java.
-     * Файлу автоматически добавляется расширение {@value #FRAC_EXTENSION}, если оно отсутствует.
-     *
-     * @param state    Состояние {@link FractalState} для сохранения. Не может быть null.
-     * @param file     Файл назначения. Не может быть null. Путь к файлу должен существовать.
-     *                 Если имя файла не содержит {@value #FRAC_EXTENSION}, оно будет добавлено.
-     * @throws IOException Если возникает ошибка ввода/вывода во время записи файла (например, нет прав доступа).
-     * @throws NullPointerException если {@code state} или {@code file} равны null.
-     */
     public void saveFractalState(FractalState state, File file) throws IOException {
-        Objects.requireNonNull(state, "Состояние FractalState не может быть null для сохранения");
-        Objects.requireNonNull(file, "Файл для сохранения состояния не может быть null");
-
-        // Убедимся, что файл имеет правильное расширение
-        File targetFile = ensureExtension(file, FRAC_EXTENSION);
-
-        // Используем try-with-resources для автоматического закрытия потоков
-        try (ObjectOutputStream oos = new ObjectOutputStream(
-                                           new BufferedOutputStream(
-                                               new FileOutputStream(targetFile)))) {
-            oos.writeObject(state); // Сериализуем объект состояния
-            System.out.println("Состояние фрактала успешно сохранено в: " + targetFile.getAbsolutePath());
-        } catch (IOException e) {
-            System.err.println("Ошибка при сохранении состояния фрактала в " + targetFile.getAbsolutePath() + ": " + e.getMessage());
-            throw e; // Перебрасываем исключение дальше
-        }
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.writerWithDefaultPrettyPrinter().writeValue(file, state);
     }
 
-    /**
-     * Загружает состояние фрактала {@link FractalState} из указанного файла формата {@code .frac}.
-     * Выполняет десериализацию объекта из файла.
-     *
-     * @param file Файл формата {@code .frac} для загрузки. Не может быть null, должен существовать
-     *             и иметь расширение {@value #FRAC_EXTENSION}.
-     * @return Загруженный объект {@link FractalState}.
-     * @throws IOException            Если возникает ошибка ввода/вывода во время чтения файла.
-     * @throws FileNotFoundException  Если файл не найден или не является обычным файлом.
-     * @throws ClassNotFoundException Если класс {@code FractalState} (или один из его зависимых классов)
-     *                                не найден во время десериализации (проблема classpath или версии).
-     * @throws ClassCastException     Если объект, десериализованный из файла, не является
-     *                                экземпляром {@code FractalState}.
-     * @throws IllegalArgumentException Если файл не имеет расширения {@value #FRAC_EXTENSION}.
-     * @throws NullPointerException   если {@code file} равен null.
-     */
-    public FractalState loadFractalState(File file) throws IOException, ClassNotFoundException {
-        Objects.requireNonNull(file, "Файл для загрузки состояния не может быть null");
-
-        if (!file.exists() || !file.isFile()) {
-            throw new FileNotFoundException("Файл не найден или не является обычным файлом: " + file.getAbsolutePath());
-        }
-         // Проверяем расширение файла
-         if (!file.getName().toLowerCase().endsWith(FRAC_EXTENSION)) {
-             throw new IllegalArgumentException("Файл для загрузки состояния должен иметь расширение " + FRAC_EXTENSION);
-         }
-
-        // Используем try-with-resources для автоматического закрытия потоков
-        try (ObjectInputStream ois = new ObjectInputStream(
-                                           new BufferedInputStream(
-                                               new FileInputStream(file)))) {
-            Object loadedObject = ois.readObject(); // Десериализуем объект
-            if (loadedObject instanceof FractalState) {
-                System.out.println("Состояние фрактала успешно загружено из: " + file.getAbsolutePath());
-                return (FractalState) loadedObject;
-            } else {
-                // Если файл содержит объект другого типа
-                throw new ClassCastException("Файл не содержит корректный объект FractalState. Обнаружен тип: "
-                                             + (loadedObject != null ? loadedObject.getClass().getName() : "null"));
-            }
-        } catch (IOException | ClassNotFoundException | ClassCastException e) {
-            System.err.println("Ошибка при загрузке состояния фрактала из " + file.getAbsolutePath() + ": " + e.getMessage());
-            throw e; // Перебрасываем исключение дальше
-        }
+    public FractalState loadFractalState(File file) throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        return mapper.readValue(file, FractalState.class);
     }
 
      /**

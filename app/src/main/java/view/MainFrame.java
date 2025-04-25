@@ -10,6 +10,9 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * Главное окно приложения "Fractal Explorer". // Изменено название для соответствия
  * Содержит панель отрисовки фрактала ({@link FractalPanel}),

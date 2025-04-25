@@ -4,6 +4,9 @@ package math;
 import utils.ComplexNumber;
 import java.io.Serializable;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
 /**
  * Функциональный интерфейс, представляющий собой стратегию вычисления
  * количества итераций для точки в некотором фрактальном множестве.
@@ -18,6 +21,11 @@ import java.io.Serializable;
  * </p>
  */
 @FunctionalInterface
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = MandelbrotFunction.class, name = "Mandelbrot"),
+    @JsonSubTypes.Type(value = JuliaFunction.class, name = "Julia")
+})
 public interface FractalFunction extends Serializable {
     /**
      * Версия для сериализации. Необходима для {@link Serializable} интерфейсов.

@@ -4,6 +4,9 @@ package model;
 import java.io.Serializable;
 import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * Представляет прямоугольную область комплексной плоскости, отображаемую в данный момент.
  * Является неизменяемым (immutable) объектом, определяемым минимальными и максимальными
@@ -19,13 +22,13 @@ public final class Viewport implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /** Минимальная вещественная координата (левая граница). */
-    private final double minX;
+    private double minX;
     /** Максимальная вещественная координата (правая граница). */
-    private final double maxX;
+    private double maxX;
     /** Минимальная мнимая координата (нижняя граница). */
-    private final double minY;
+    private double minY;
     /** Максимальная мнимая координата (верхняя граница). */
-    private final double maxY;
+    private double maxY;
 
     /**
      * Область просмотра по умолчанию, охватывающая стандартный вид множества Мандельброта
@@ -43,47 +46,31 @@ public final class Viewport implements Serializable {
      * @param minY Минимальная или максимальная мнимая координата.
      * @param maxY Максимальная или минимальная мнимая координата.
      */
-    public Viewport(double minX, double maxX, double minY, double maxY) {
-        // Гарантируем правильный порядок координат min <= max
-        this.minX = Math.min(minX, maxX);
-        this.maxX = Math.max(minX, maxX);
-        this.minY = Math.min(minY, maxY);
-        this.maxY = Math.max(minY, maxY);
+    @JsonCreator
+    public Viewport(
+        @JsonProperty("minX") double minX,
+        @JsonProperty("maxX") double maxX,
+        @JsonProperty("minY") double minY,
+        @JsonProperty("maxY") double maxY
+    ) {
+        this.minX = minX;
+        this.maxX = maxX;
+        this.minY = minY;
+        this.maxY = maxY;
     }
 
-    // --- Геттеры ---
+    public double getMinX() { return minX; }
+    public void setMinX(double minX) { this.minX = minX; }
 
-    /**
-     * Возвращает минимальную вещественную координату (левую границу) области просмотра.
-     * @return Значение {@code minX}.
-     */
-    public double getMinX() {
-        return minX;
-    }
+    public double getMaxX() { return maxX; }
+    public void setMaxX(double maxX) { this.maxX = maxX; }
 
-    /**
-     * Возвращает максимальную вещественную координату (правую границу) области просмотра.
-     * @return Значение {@code maxX}.
-     */
-    public double getMaxX() {
-        return maxX;
-    }
+    public double getMinY() { return minY; }
+    public void setMinY(double minY) { this.minY = minY; }
 
-    /**
-     * Возвращает минимальную мнимую координату (нижнюю границу) области просмотра.
-     * @return Значение {@code minY}.
-     */
-    public double getMinY() {
-        return minY;
-    }
+    public double getMaxY() { return maxY; }
+    public void setMaxY(double maxY) { this.maxY = maxY; }
 
-    /**
-     * Возвращает максимальную мнимую координату (верхнюю границу) области просмотра.
-     * @return Значение {@code maxY}.
-     */
-    public double getMaxY() {
-        return maxY;
-    }
 
     /**
      * Вычисляет ширину области просмотра ({@code maxX - minX}).
