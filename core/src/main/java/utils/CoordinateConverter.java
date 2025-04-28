@@ -49,26 +49,44 @@ public final class CoordinateConverter { // final, т.к. утилитарный
             return null;
         }
 
-        // --- Логика преобразования ---
-        // 1. Вычисляем относительное положение пикселя на экране в диапазоне [0, 1].
-        //    Используем (screenWidth - 1.0) и (screenHeight - 1.0), так как пиксели нумеруются
-        //    от 0 до width-1 и от 0 до height-1. Деление на (width-1) дает пропорцию.
-        //    Используем double для точности.
-        //    proportionX = 0 соответствует левому краю (screenX=0), 1 - правому краю (screenX=width-1).
-        //    proportionY = 0 соответствует верхнему краю (screenY=0), 1 - нижнему краю (screenY=height-1).
+        // --- Логика преобразования с учётом соотношения сторон ---
+        // Вычисляем соотношение сторон экрана и вьюпорта
+        double screenAspectRatio = (double) screenWidth / screenHeight;
+        double viewportAspectRatio = viewport.getWidth() / viewport.getHeight();
+        
+        // Выбираем центр области просмотра
+        double centerX = (viewport.getMinX() + viewport.getMaxX()) / 2.0;
+        double centerY = (viewport.getMinY() + viewport.getMaxY()) / 2.0;
+        
+        // Определяем эффективную область преобразования с корректным соотношением сторон
+        double effectiveWidth = viewport.getWidth();
+        double effectiveHeight = viewport.getHeight();
+        
+        // Корректируем по необходимости, чтобы соотношение сторон соответствовало экрану
+        if (screenAspectRatio > viewportAspectRatio) {
+            // Экран шире, чем вьюпорт - увеличиваем ширину вьюпорта
+            effectiveWidth = effectiveHeight * screenAspectRatio;
+        } else if (screenAspectRatio < viewportAspectRatio) {
+            // Экран выше, чем вьюпорт - увеличиваем высоту вьюпорта
+            effectiveHeight = effectiveWidth / screenAspectRatio;
+        }
+        
+        // Вычисляем эффективные границы с сохранением центра
+        double effectiveMinX = centerX - effectiveWidth / 2.0;
+        double effectiveMaxX = centerX + effectiveWidth / 2.0;
+        double effectiveMinY = centerY - effectiveHeight / 2.0;
+        double effectiveMaxY = centerY + effectiveHeight / 2.0;
+        
+        // 1. Вычисляем относительное положение пикселя на экране в диапазоне [0, 1]
         double proportionX = (screenWidth == 1) ? 0.5 : (double) screenX / (screenWidth - 1.0);   // Избегаем деления на ноль, если ширина 1
         double proportionY = (screenHeight == 1) ? 0.5 : (double) screenY / (screenHeight - 1.0); // Избегаем деления на ноль, если высота 1
 
-        // 2. Преобразуем относительные экранные координаты в координаты комплексной плоскости.
-        //    Вещественная часть (real) линейно отображается из [0, 1] в [minX, maxX].
-        //    real = minX + proportionX * (maxX - minX)
-        double real = viewport.getMinX() + proportionX * viewport.getWidth();
-
-        //    Мнимая часть (imaginary) линейно отображается из [0, 1] в [maxY, minY].
-        //    Обратите внимание на инверсию оси Y: proportionY = 0 (верх экрана) соответствует maxY (верх viewport),
-        //    а proportionY = 1 (низ экрана) соответствует minY (низ viewport).
-        //    imaginary = maxY - proportionY * (maxY - minY)
-        double imaginary = viewport.getMaxY() - proportionY * viewport.getHeight();
+        // 2. Преобразуем относительные экранные координаты в координаты комплексной плоскости
+        //    с использованием скорректированных эффективных границ
+        double real = effectiveMinX + proportionX * (effectiveMaxX - effectiveMinX);
+        
+        // Учитываем инверсию оси Y: верх экрана = верх математической области
+        double imaginary = effectiveMaxY - proportionY * (effectiveMaxY - effectiveMinY);
 
         return new ComplexNumber(real, imaginary);
     }
@@ -112,17 +130,39 @@ public final class CoordinateConverter { // final, т.к. утилитарный
               // throw new IllegalArgumentException("Viewport has zero width or height");
          }
 
-         // --- Логика преобразования ---
-         // 1. Вычисляем относительное положение комплексного числа внутри Viewport в диапазоне [0, 1].
-         //    proportionX = (real - minX) / (maxX - minX)
-         //    proportionY = (imaginary - minY) / (maxY - minY) -- это для стандартной оси Y
-         //    Из-за инверсии оси Y экрана, нам нужно отображение из [maxY, minY] в [0, 1].
-         //    proportionY_inverted = (maxY - imaginary) / (maxY - minY)
-         double proportionX = (complex.getReal() - viewport.getMinX()) / viewportWidth;
-         double proportionY = (viewport.getMaxY() - complex.getImaginary()) / viewportHeight; // Инверсия Y
+         // --- Логика преобразования с учётом соотношения сторон ---
+         // Вычисляем соотношение сторон экрана и вьюпорта
+         double screenAspectRatio = (double) screenWidth / screenHeight;
+         double viewportAspectRatio = viewportWidth / viewportHeight;
+         
+         // Выбираем центр области просмотра
+         double centerX = (viewport.getMinX() + viewport.getMaxX()) / 2.0;
+         double centerY = (viewport.getMinY() + viewport.getMaxY()) / 2.0;
+         
+         // Определяем эффективную область преобразования с корректным соотношением сторон
+         double effectiveWidth = viewportWidth;
+         double effectiveHeight = viewportHeight;
+         
+         // Корректируем по необходимости, чтобы соотношение сторон соответствовало экрану
+         if (screenAspectRatio > viewportAspectRatio) {
+             // Экран шире, чем вьюпорт - увеличиваем ширину вьюпорта
+             effectiveWidth = effectiveHeight * screenAspectRatio;
+         } else if (screenAspectRatio < viewportAspectRatio) {
+             // Экран выше, чем вьюпорт - увеличиваем высоту вьюпорта
+             effectiveHeight = effectiveWidth / screenAspectRatio;
+         }
+         
+         // Вычисляем эффективные границы с сохранением центра
+         double effectiveMinX = centerX - effectiveWidth / 2.0;
+         double effectiveMaxX = centerX + effectiveWidth / 2.0;
+         double effectiveMinY = centerY - effectiveHeight / 2.0;
+         double effectiveMaxY = centerY + effectiveHeight / 2.0;
+         
+         // 1. Вычисляем относительное положение комплексного числа внутри эффективной области
+         double proportionX = (complex.getReal() - effectiveMinX) / (effectiveMaxX - effectiveMinX);
+         double proportionY = (effectiveMaxY - complex.getImaginary()) / (effectiveMaxY - effectiveMinY); // Инверсия Y
 
-         // 2. Преобразуем относительные координаты Viewport в абсолютные экранные координаты.
-         //    Умножаем на (screenWidth - 1.0) и (screenHeight - 1.0) для получения пиксельных координат [0, width-1] / [0, height-1].
+         // 2. Преобразуем относительные координаты в абсолютные экранные координаты
          double screenX = proportionX * (screenWidth - 1.0);
          double screenY = proportionY * (screenHeight - 1.0);
 
