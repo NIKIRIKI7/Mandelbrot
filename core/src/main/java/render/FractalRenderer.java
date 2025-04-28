@@ -258,26 +258,55 @@ public class FractalRenderer {
             }
         }
 
-        // Метод renderTile остается прежним
+        /**
+         * Рендерит тайл в локальный буфер, а затем копирует в целевое изображение.
+         * Этот метод оптимизирован для снижения конфликтов по памяти и кэшу между потоками.
+         */
         private static void renderTile(Tile tile, FractalState state, int imageWidth, int imageHeight, BufferedImage targetImage) {
-            // ... (код renderTile без изменений) ...
+            // Получаем данные для рендеринга
             Viewport viewport = state.getViewport();
             int maxIterations = state.getMaxIterations();
             ColorScheme colorScheme = state.getColorScheme();
             FractalFunction fractalFunction = state.getFractalFunction();
-
-            for (int y = tile.startY; y < tile.startY + tile.height; ++y) {
-                if (Thread.currentThread().isInterrupted()) return; // Быстрая проверка
-                for (int x = tile.startX; x < tile.startX + tile.width; ++x) {
-                    ComplexNumber pointCoords = CoordinateConverter.screenToComplex(x, y, imageWidth, imageHeight, viewport);
+            
+            // Создаем локальный буфер для этого тайла
+            BufferedImage tileBuffer = new BufferedImage(tile.width, tile.height, BufferedImage.TYPE_INT_RGB);
+            
+            // Рендерим в локальный буфер
+            for (int localY = 0; localY < tile.height; ++localY) {
+                if (Thread.currentThread().isInterrupted()) return; // Быстрая проверка на прерывание
+                
+                // Рассчитываем глобальные координаты для преобразования
+                int globalY = tile.startY + localY;
+                
+                for (int localX = 0; localX < tile.width; ++localX) {
+                    int globalX = tile.startX + localX;
+                    
+                    // Преобразуем координаты экрана в комплексные
+                    ComplexNumber pointCoords = CoordinateConverter.screenToComplex(
+                            globalX, globalY, imageWidth, imageHeight, viewport);
                     if (pointCoords == null) continue;
 
+                    // Рассчитываем итерации для точки
                     int iterations = fractalFunction.calculateIterations(pointCoords, pointCoords, maxIterations);
+                    
+                    // Получаем цвет и записываем в локальный буфер
                     Color color = colorScheme.getColor(iterations, maxIterations);
-
-                    if (x >= 0 && x < targetImage.getWidth() && y >= 0 && y < targetImage.getHeight()) {
-                        targetImage.setRGB(x, y, color.getRGB());
-                    }
+                    tileBuffer.setRGB(localX, localY, color.getRGB());
+                }
+            }
+            
+            // Проверяем на прерывание перед финальной копией
+            if (Thread.currentThread().isInterrupted()) return;
+            
+            // Копируем данные в целевое изображение
+            // Синхронизируем доступ к целевому изображению
+            synchronized(targetImage) {
+                Graphics2D g2d = targetImage.createGraphics();
+                try {
+                    g2d.drawImage(tileBuffer, tile.startX, tile.startY, null);
+                } finally {
+                    g2d.dispose(); // Освобождаем ресурсы
                 }
             }
         }
