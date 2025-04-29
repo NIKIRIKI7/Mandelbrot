@@ -1,4 +1,3 @@
-// File: app/src/main/java/config/ShortcutConfiguration.java
 package config;
 
 import shortcuts.AppCommand;

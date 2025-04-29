@@ -138,3 +138,60 @@ Checkstyle:
 Проверка именования, отступов, Javadoc.
 Итог: Архитектура обеспечивает гибкость (смена цветовых схем, форматов сохранения), производительность (многопоточность) и соответствие требованиям (масштабирование, аспект, Undo). Laboratory Work #3
 Fractal: Mandelbrot Set
+
+
+
+
+/app/src/main/java/
+│
+├── shortcuts/
+│   ├── AppCommand.java
+│   │   └─ Интерфейс команды для горячих клавиш и пунктов меню.
+│   ├── KeyboardShortcutManager.java
+│   │   ├─ Singleton для централизованного управления горячими клавишами.
+│   │   ├─ Методы:
+│   │   │   • registerShortcut(KeyStroke, AppCommand)
+│   │   │   • bindMenuItemToShortcut(JMenuItem, KeyStroke)
+│   │   │   • updateMenuItemStates(JComponent)
+│   └── ShortcutConfiguration.java
+│       └─ Конфигуратор для инициализации стандартных сочетаний клавиш и команд.
+│
+├── view/
+│   ├── MenuBar.java
+│   │   ├─ Главное меню приложения.
+│   │   ├─ Использует KeyboardShortcutManager для привязки команд к меню.
+│   │   ├─ Методы:
+│   │   │   • createFileMenu()
+│   │   │   • createEditMenu()
+│   │   │   • createViewMenu()
+│   │   │   • createLoadCommand(), createSaveCommand(), createExitCommand(), createUndoCommand()
+│   ├── AnimationSetupDialog.java
+│   │   ├─ Диалоговое окно для создания анимаций.
+│   │   ├─ Управляет панелями ключевых кадров, предпросмотра, параметров и прогресса.
+│   │   ├─ Методы:
+│   │   │   • startOrCancelAnimationGeneration(ActionEvent)
+│   │   │   • process(List<String> chunks) — обработка текстового статуса рендеринга
+│   │   │   • publishProgress(double progress) — обновление прогресса
+│   ├── KeyframeListPanel.java
+│   │   ├─ Панель для списка ключевых кадров анимации.
+│   │   ├─ Кнопки: добавить, удалить, вверх, вниз.
+│   │   ├─ Методы:
+│   │   │   • refreshList() — обновление UI после изменения кадров
+│   ├── GenerationControlPanel.java
+│   │   ├─ Панель управления генерацией анимации.
+│   │   ├─ Содержит кнопку запуска/отмены, прогресс-бар и статус.
+│   │   ├─ Методы:
+│   │   │   • setProgress(int)
+│   │   │   • setStatus(String)
+│   │   │   • setProgressVisible(boolean)
+│   └── MainFrame.java
+│       └─ Основное окно приложения, инициализация всех панелей и меню.
+│
+├── services/
+│   └── FileService.java
+│       └─ Загрузка и сохранение состояния фрактала.
+│
+└── viewmodel/
+    └── FractalViewModel.java
+        └─ ViewModel для управления состоянием фрактала и undo/redo.
+
