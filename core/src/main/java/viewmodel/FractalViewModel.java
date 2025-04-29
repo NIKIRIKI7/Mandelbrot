@@ -3,14 +3,15 @@ package viewmodel;
 
 import model.ColorScheme;
 import model.FractalState;
-
+import utils.ComplexNumber;
+import utils.CoordinateConverter;
 import render.FractalRenderer;
 import viewmodel.commands.Command;
 import viewmodel.commands.PanCommand;
-import viewmodel.commands.UndoManager;
 import viewmodel.commands.ZoomCommand;
-import utils.CoordinateConverter;
-import utils.ComplexNumber;
+import viewmodel.commands.UndoManager;
+import iteration.IterationStrategy;
+import iteration.LogarithmicIterationStrategy;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
@@ -39,6 +40,8 @@ public class FractalViewModel {
     public FractalViewModel() {
         this.currentState = new FractalState();
         this.undoManager = new UndoManager(100);
+        // Инициализируем стратегию расчёта итераций при создании ViewModel
+        this.iterationStrategy = new LogarithmicIterationStrategy(0.3);
     }
 
 
@@ -64,10 +67,8 @@ public class FractalViewModel {
     /** Ссылка на рендерер (может не использоваться напрямую, но передается по архитектуре). */
 
 
-    /** Базовое количество итераций для расчета при зуме. */
-    private static final int BASE_ITERATIONS_FOR_ZOOM = 50; // Было MIN_ITERATIONS
-    /** Коэффициент, определяющий, насколько быстро растут итерации при зуме. */
-    private static final double ITERATION_ZOOM_SENSITIVITY = 40.0; // Было ITERATION_ZOOM_FACTOR
+    /** Стратегия расчёта итераций при изменении масштаба (Pattern: Strategy) */
+    private final IterationStrategy iterationStrategy;
 
 
     /**
@@ -90,6 +91,8 @@ public class FractalViewModel {
         this.undoManager = new UndoManager(undoHistorySize);
         // Используем статический фабричный метод для создания состояния Мандельброта по умолчанию
         this.currentState = FractalState.createDefault();
+        // Инициализируем стратегию расчёта итераций с коэффициентом 0.7
+        this.iterationStrategy = new LogarithmicIterationStrategy(0.3);
         // Уведомление о начальном состоянии не требуется здесь,
         // View (FractalPanel) запросит рендер при первом отображении/изменении размера.
     }
@@ -240,13 +243,12 @@ public class FractalViewModel {
         // Вычисляем целевое соотношение сторон на основе размеров панели
         double targetAspectRatio = (double) panelWidth / panelHeight;
 
-        // Создаем команду зума, передавая ViewModel, комплексные координаты углов и аспект
+        // Создаем команду зума, передавая ViewModel, комплексные координаты углов, аспект и стратегию расчёта итераций
         Command zoomCommand = new ZoomCommand(this,
                                               c1.getReal(), c2.getReal(),
                                               c1.getImaginary(), c2.getImaginary(),
                                               targetAspectRatio,
-                                              BASE_ITERATIONS_FOR_ZOOM,
-                                              ITERATION_ZOOM_SENSITIVITY);
+                                              iterationStrategy);
         executeCommand(zoomCommand);
     }
 
@@ -393,6 +395,15 @@ public class FractalViewModel {
      */
     public void removePropertyChangeListener(PropertyChangeListener listener) {
         support.removePropertyChangeListener(listener);
+    }
+    
+    /**
+     * Возвращает текущую стратегию расчёта итераций.
+     * 
+     * @return Текущая стратегия расчёта итераций.
+     */
+    public IterationStrategy getIterationStrategy() {
+        return iterationStrategy;
     }
 
     /**

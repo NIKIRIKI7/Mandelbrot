@@ -4,6 +4,7 @@ package viewmodel.commands;
 import model.FractalState;
 import model.Viewport;
 import viewmodel.FractalViewModel; // Добавлен импорт для доступа к ViewModel
+import iteration.IterationStrategy;
 
 import java.util.Objects;
 
@@ -48,11 +49,9 @@ public class ZoomCommand implements Command {
     /** Флаг, указывающий, была ли команда уже выполнена хотя бы один раз. */
     private boolean executed = false;
 
-    // Параметры для расчета динамических итераций
-    /** Базовое количество итераций, к которому добавляется дельта при зуме. */
-    private final int baseIterations;
-    /** Коэффициент, влияющий на скорость роста итераций при зуме. */
-    private final double iterationZoomSensitivity;
+    // Стратегия для расчёта динамических итераций (Pattern: Strategy)
+    /** Стратегия расчёта количества итераций на основе зума */
+    private final IterationStrategy iterationStrategy;
 
 
     /**
@@ -64,15 +63,14 @@ public class ZoomCommand implements Command {
      * @param y1                Одна из мнимых координат целевой области масштабирования.
      * @param y2                Другая мнимая координата целевой области масштабирования.
      * @param targetAspectRatio Желаемое соотношение сторон нового Viewport (обычно соответствует панели). Должно быть > 0.
-     * @param baseIterations    Базовое/минимальное количество итераций для расчета при зуме. Должно быть > 0.
-     * @param iterationZoomSensitivity Коэффициент чувствительности роста итераций (больше значение - быстрее растут).
-     * @throws NullPointerException если {@code viewModel} равен null.
-     * @throws IllegalArgumentException если {@code targetAspectRatio <= 0} или {@code baseIterations <= 0}.
+     * @param iterationStrategy Стратегия динамического расчёта итераций. Не может быть null.
+     * @throws NullPointerException если {@code viewModel} или {@code iterationStrategy} равен null.
+     * @throws IllegalArgumentException если {@code targetAspectRatio <= 0}.
      */
     public ZoomCommand(FractalViewModel viewModel,
                        double x1, double x2, double y1, double y2,
                        double targetAspectRatio,
-                       int baseIterations, double iterationZoomSensitivity) {
+                       IterationStrategy iterationStrategy) {
         this.viewModel = Objects.requireNonNull(viewModel, "ViewModel не может быть null");
         // Упорядочиваем координаты сразу
         this.targetMinX = Math.min(x1, x2);
@@ -84,12 +82,8 @@ public class ZoomCommand implements Command {
             throw new IllegalArgumentException("Целевое соотношение сторон должно быть положительным.");
         }
         this.targetAspectRatio = targetAspectRatio;
-
-         if (baseIterations <= 0) {
-            throw new IllegalArgumentException("Базовое количество итераций должно быть положительным.");
-        }
-        this.baseIterations = baseIterations;
-        this.iterationZoomSensitivity = iterationZoomSensitivity;
+        
+        this.iterationStrategy = Objects.requireNonNull(iterationStrategy, "IterationStrategy не может быть null");
 
         // Инициализируем поля для undo
         this.previousViewport = null;
@@ -201,41 +195,39 @@ public class ZoomCommand implements Command {
      *                         Текущая формула использует {@link #baseIterations}.
      * @return Рассчитанное новое количество итераций, но не менее {@link #baseIterations}.
      */
+    /**
+     * Рассчитывает новое рекомендуемое количество итераций на основе изменения масштаба (зума).
+     * Делегирует вычисления конкретной стратегии, реализующей IterationStrategy.
+     * 
+     * @param oldViewport      Viewport *до* выполнения зума.
+     * @param newViewport      Viewport *после* выполнения зума.
+     * @param currentIterations Текущее количество итераций (до расчета новых).
+     * @return Рассчитанное новое количество итераций.
+     */
     private int calculateNewIterations(Viewport oldViewport, Viewport newViewport, int currentIterations) {
-         // Используем ширину для определения масштаба. Можно использовать и высоту или площадь.
-         double oldWidth = oldViewport.getWidth();
-         double newWidth = newViewport.getWidth();
+        // Используем ширину для определения масштаба. Можно использовать и высоту или площадь.
+        double oldWidth = oldViewport.getWidth();
+        double newWidth = newViewport.getWidth();
 
-         // Избегаем деления на ноль или некорректных значений
-         final double EPSILON = 1e-9;
-         if (oldWidth < EPSILON || newWidth < EPSILON) {
-             System.err.println("Предупреждение: Расчет новых итераций пропущен из-за нулевой ширины Viewport.");
-             return Math.max(this.baseIterations, currentIterations); // Возвращаем большее из базового и текущего
-         }
+        // Избегаем деления на ноль или некорректных значений
+        final double EPSILON = 1e-9;
+        if (oldWidth < EPSILON || newWidth < EPSILON) {
+            System.err.println("Предупреждение: Расчет новых итераций пропущен из-за нулевой ширины Viewport.");
+            return currentIterations; // Сохраняем текущее количество итераций
+        }
 
-         // Коэффициент масштабирования (во сколько раз уменьшилась ширина/увеличился зум)
-         double zoomLevelFactor = oldWidth / newWidth;
+        // Коэффициент масштабирования (во сколько раз уменьшилась ширина/увеличился зум)
+        double zoomLevelFactor = oldWidth / newWidth;
 
-         // Если произошло отдаление (zoomLevelFactor < 1), итерации не уменьшаем ниже базовых.
-         // Логарифм от числа < 1 отрицателен.
-         if (zoomLevelFactor <= 0) { // Логарифм не определен для <= 0
-              System.err.println("Предупреждение: Некорректный zoomLevelFactor <= 0 для расчета итераций.");
-              return Math.max(this.baseIterations, currentIterations);
-         }
-
-         // Формула: Новые Итерации = БазовыеИтерации + log(КоэффициентЗума) * Чувствительность
-         // Math.log() - натуральный логарифм.
-         // Добавляем прирост к БАЗОВЫМ итерациям.
-         int calculatedIterations = this.baseIterations + (int) (Math.log(zoomLevelFactor) * this.iterationZoomSensitivity);
-
-         // Ограничиваем минимальным значением (baseIterations) и, возможно, максимальным (если нужно)
-         return Math.max(this.baseIterations, calculatedIterations);
-
-         // Альтернативная формула: относительное увеличение от текущих итераций
-         /*
-         int deltaIterations = (int) (Math.log(zoomLevelFactor) * this.iterationZoomSensitivity);
-         int calculatedIterations = currentIterations + deltaIterations; // Добавляем к текущим
-         return Math.max(this.baseIterations, calculatedIterations); // Ограничиваем базовыми снизу
-         */
+        // Делегируем расчет стратегии (Pattern Strategy)
+        try {
+            int newIterations = iterationStrategy.calculate(currentIterations, zoomLevelFactor);
+            System.out.printf("ZoomCommand: zoomFactor=%.4f, oldIterations=%d, newIterations=%d%n",
+                            zoomLevelFactor, currentIterations, newIterations);
+            return newIterations;
+        } catch (Exception e) {
+            System.err.println("Ошибка при расчете итераций: " + e.getMessage());
+            return currentIterations; // Возвращаем текущее значение в случае ошибки
+        }
     }
 }
