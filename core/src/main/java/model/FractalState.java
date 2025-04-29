@@ -24,6 +24,14 @@ import java.util.Objects;
  * и для сохранения/загрузки состояния приложения (так как реализует {@link Serializable}).
  */
 public final class FractalState implements Serializable {
+    // Конструктор по умолчанию для совместимости с ViewModel
+    public FractalState() {
+        this.viewport = new Viewport(); // Требуется дефолтный конструктор Viewport
+        this.maxIterations = 1000;
+        this.colorScheme = new model.NonlinearRGBScheme(); // или другая дефолтная схема
+        this.fractalFunction = DEFAULT_FRACTAL_FUNCTION;
+    }
+
     /**
      * Версия для сериализации. Увеличена до 2 из-за добавления поля {@code fractalFunction}.
      */

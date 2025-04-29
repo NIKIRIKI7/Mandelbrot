@@ -8,6 +8,7 @@ import model.NonlinearRGBScheme;
 import services.FileService;
 import viewmodel.FractalViewModel;
 import services.AnimationService;
+import java.awt.Window;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -17,7 +18,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.CancellationException; // Для Animation
+
 
 /**
  * Создает и управляет главным меню приложения для исследования фракталов.
@@ -27,7 +28,7 @@ public class MenuBar extends JMenuBar {
     private final FractalViewModel viewModel;
     private final FileService fileService;
     private final FractalPanel fractalPanel;
-    private final MainFrame ownerFrame; // Изменен тип на MainFrame для доступа к StatusBar
+    private final StatusBar statusBar;
     private final AnimationService animationService;
 
     private JMenuItem undoMenuItem;
@@ -41,13 +42,13 @@ public class MenuBar extends JMenuBar {
      * @param viewModel ViewModel приложения.
      * @param fileService Сервис для файловых операций.
      * @param fractalPanel Панель отрисовки фрактала.
-     * @param ownerFrame Главное окно приложения {@link MainFrame}.
+     * @param statusBar Строка состояния.
      */
-    public MenuBar(FractalViewModel viewModel, FileService fileService, FractalPanel fractalPanel, MainFrame ownerFrame) { // <-- Тип ownerFrame изменен
+    public MenuBar(FractalViewModel viewModel, FileService fileService, FractalPanel fractalPanel, StatusBar statusBar) {
         this.viewModel = viewModel;
         this.fileService = fileService;
         this.fractalPanel = fractalPanel;
-        this.ownerFrame = ownerFrame;
+        this.statusBar = statusBar;
         this.animationService = new AnimationService(); // Инициализация здесь
 
         createFileMenu();
@@ -63,8 +64,8 @@ public class MenuBar extends JMenuBar {
                 updateColorSchemeSelection();
                 // Обновляем статус после изменения состояния (например, после Undo)
                 FractalState newState = (FractalState) evt.getNewValue();
-                if (newState != null && ownerFrame.getStatusBar() != null && !fractalPanel.isRendering) { // Обновляем, если не идет рендер
-                    ownerFrame.getStatusBar().setStatus(
+                if (newState != null && statusBar != null && !fractalPanel.isRendering) { // Обновляем, если не идет рендер
+                    statusBar.setStatus(
                             String.format("Готово. Область: X=[%.4g, %.4g], Y=[%.4g, %.4g], Итер: %d",
                                     newState.getViewport().getMinX(), newState.getViewport().getMaxX(),
                                     newState.getViewport().getMinY(), newState.getViewport().getMaxY(),
@@ -97,7 +98,10 @@ public class MenuBar extends JMenuBar {
         exitItem.setMnemonic(KeyEvent.VK_X);
         exitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Q, ActionEvent.CTRL_MASK));
         exitItem.addActionListener(e -> {
-            ownerFrame.dispatchEvent(new java.awt.event.WindowEvent(ownerFrame, java.awt.event.WindowEvent.WINDOW_CLOSING));
+            Window window = SwingUtilities.getWindowAncestor(this);
+            if (window != null) {
+                window.dispatchEvent(new java.awt.event.WindowEvent(window, java.awt.event.WindowEvent.WINDOW_CLOSING));
+            }
         });
         fileMenu.add(exitItem);
 
@@ -118,8 +122,8 @@ public class MenuBar extends JMenuBar {
         fileChooser.setAcceptAllFileFilterUsed(false);
         fileChooser.setFileFilter(fracFilter); // По умолчанию
 
-        int result = fileChooser.showSaveDialog(ownerFrame);
-        StatusBar statusBar = ownerFrame.getStatusBar();
+        int result = fileChooser.showSaveDialog(this);
+        
 
         if (result != JFileChooser.APPROVE_OPTION) {
             statusBar.setStatus("Сохранение отменено.");
@@ -199,7 +203,7 @@ public class MenuBar extends JMenuBar {
             schemeItem.addActionListener(e -> {
                 if (schemeItem.isSelected()) {
                     viewModel.changeColorScheme(scheme);
-                    ownerFrame.getStatusBar().setStatus("Цветовая схема изменена на: " + scheme.getName());
+                    statusBar.setStatus("Цветовая схема изменена на: " + scheme.getName());
                 }
             });
             schemeGroup.add(schemeItem);
@@ -239,8 +243,8 @@ public class MenuBar extends JMenuBar {
         fileChooser.setFileFilter(new FileNameExtensionFilter("Файлы состояния (*.frac)", "frac"));
         fileChooser.setAcceptAllFileFilterUsed(false);
 
-        int result = fileChooser.showOpenDialog(ownerFrame);
-        StatusBar statusBar = ownerFrame.getStatusBar(); // Получаем StatusBar
+        int result = fileChooser.showOpenDialog(this);
+         // Получаем StatusBar
 
         if (result == JFileChooser.APPROVE_OPTION) {
             File selectedFile = fileChooser.getSelectedFile();
@@ -260,6 +264,14 @@ public class MenuBar extends JMenuBar {
         }
     }
 
+    /**
+     * Сохраняет текущее состояние фрактала в файл с расширением .frac
+     * Позволяет выбрать файл через JFileChooser и обновляет строку состояния
+     * после завершения операции или в случае ошибки.
+     * 
+     * Аннотация указывает, что метод фактически используется через обработчики событий.
+     */
+    @SuppressWarnings("unused")
     private void saveFractal() {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Сохранить состояние фрактала как");
@@ -267,8 +279,7 @@ public class MenuBar extends JMenuBar {
         fileChooser.setAcceptAllFileFilterUsed(false);
         fileChooser.setSelectedFile(new File("fractal_state.frac"));
 
-        int result = fileChooser.showSaveDialog(ownerFrame);
-        StatusBar statusBar = ownerFrame.getStatusBar();
+        int result = fileChooser.showSaveDialog(this);
 
         if (result == JFileChooser.APPROVE_OPTION) {
             File selectedFile = fileChooser.getSelectedFile();
@@ -287,13 +298,22 @@ public class MenuBar extends JMenuBar {
         }
     }
 
+    /**
+     * Сохраняет текущее изображение фрактала в файл в заданном формате.
+     * Выполняет проверку наличия готового изображения, позволяет выбрать
+     * файл через JFileChooser и обновляет строку состояния.
+     * 
+     * Аннотация указывает, что метод фактически используется через обработчики событий.
+     * 
+     * @param format Формат сохранения (например, "png", "jpeg")
+     */
+    @SuppressWarnings("unused")
     private void saveImage(String format) {
         BufferedImage imageToSave = fractalPanel.getCurrentImage();
-        StatusBar statusBar = ownerFrame.getStatusBar();
-
+        
         if (imageToSave == null) {
             String msg = "Нет готового изображения для сохранения. Подождите завершения рендеринга.";
-            JOptionPane.showMessageDialog(ownerFrame, msg, "Ошибка сохранения", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, msg, "Ошибка сохранения", JOptionPane.WARNING_MESSAGE);
             statusBar.setStatus("Ошибка: " + msg);
             return;
         }
@@ -306,7 +326,7 @@ public class MenuBar extends JMenuBar {
         fileChooser.setAcceptAllFileFilterUsed(false);
         fileChooser.setSelectedFile(new File("fractal_image." + extension));
 
-        int result = fileChooser.showSaveDialog(ownerFrame);
+        int result = fileChooser.showSaveDialog(this);
         if (result == JFileChooser.APPROVE_OPTION) {
             File selectedFile = fileChooser.getSelectedFile();
             statusBar.setStatus("Сохранение изображения в файл " + selectedFile.getName() + "...");
@@ -325,13 +345,16 @@ public class MenuBar extends JMenuBar {
     }
 
     private void changeMaxIterations() {
-        StatusBar statusBar = ownerFrame.getStatusBar();
+        
         String currentIterationsStr = Integer.toString(viewModel.getCurrentState().getMaxIterations());
         String input = (String) JOptionPane.showInputDialog(
-                ownerFrame,
-                "Введите максимальное количество итераций:",
-                "Задать макс. итераций",
-                JOptionPane.PLAIN_MESSAGE, null, null, currentIterationsStr
+            this,
+            "Введите максимальное количество итераций:",
+            "Задать макс. итераций",
+            JOptionPane.QUESTION_MESSAGE,
+            null,
+            null,
+            currentIterationsStr
         );
 
         if (input != null && !input.trim().isEmpty()) {
@@ -409,24 +432,25 @@ public class MenuBar extends JMenuBar {
 
 
     private void showErrorDialog(String title, String message) {
-        JOptionPane.showMessageDialog(ownerFrame, message, title, JOptionPane.ERROR_MESSAGE);
+        JOptionPane.showMessageDialog(this, message, title, JOptionPane.ERROR_MESSAGE);
     }
 
 
     private void openAnimationSetupDialog() {
         // Проверяем, не идет ли основной рендеринг
         if (fractalPanel.isRendering) {
-            ownerFrame.getStatusBar().setStatus("Дождитесь завершения рендеринга перед открытием редактора анимации.");
-            JOptionPane.showMessageDialog(ownerFrame,
+            statusBar.setStatus("Дождитесь завершения рендеринга перед открытием редактора анимации.");
+            JOptionPane.showMessageDialog(this,
                     "Пожалуйста, дождитесь завершения текущего рендеринга фрактала.",
                     "Рендеринг активен", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
 
         // Создаем и отображаем диалог
-        AnimationSetupDialog dialog = new AnimationSetupDialog(ownerFrame, viewModel, animationService);
+        JFrame owner = (JFrame) SwingUtilities.getWindowAncestor(this);
+AnimationSetupDialog dialog = new AnimationSetupDialog(owner, viewModel, animationService);
         dialog.display();
         // StatusBar главного окна обновляем после закрытия диалога (если нужно)
-        // ownerFrame.getStatusBar().setStatus("Редактор анимации закрыт.");
+        // statusBar.setStatus("Редактор анимации закрыт.");
     }
 }

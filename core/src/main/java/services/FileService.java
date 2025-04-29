@@ -28,8 +28,6 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
  */
 public class FileService {
 
-    /** Расширение файла для сохранения состояния фрактала. */
-    private static final String FRAC_EXTENSION = ".frac";
     /** Расширение файла для сохранения JPEG изображений. */
     private static final String JPG_EXTENSION = ".jpg";
     /** Расширение файла для сохранения PNG изображений. */
@@ -110,9 +108,10 @@ public class FileService {
             );
             g.setFont(new Font("SansSerif", Font.BOLD, 14));
 
+            // Используем FontMetrics для корректного позиционирования текста
             FontMetrics fm = g.getFontMetrics();
             int padding = 5;
-            int textY = image.getHeight() - padding;
+            int textY = image.getHeight() - padding - fm.getDescent();
             int textX = padding;
 
             Color textColor = Color.WHITE;

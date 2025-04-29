@@ -1,17 +1,19 @@
 // File: app/src/main/java/view/MainFrame.java
 package view;
 
-import render.FractalRenderer;
+
 import services.FileService;
 import viewmodel.FractalViewModel;
+import render.FractalRenderer;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
+
+// Новый импорт для WindowCloseHandler
+import view.handlers.WindowCloseHandler;
+
+
 
 /**
  * Главное окно приложения "Fractal Explorer". // Изменено название для соответствия
@@ -21,78 +23,81 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 public class MainFrame extends JFrame {
 
+    private static final int MIN_WIDTH = 400;
+    private static final int MIN_HEIGHT = 300;
+    private static final String TITLE = "Fractal Explorer";
     private final FractalViewModel viewModel;
-    private final FractalRenderer renderer;
     private final FileService fileService;
+    private final FractalRenderer renderer;
     private final FractalPanel fractalPanel;
-    private final StatusBar statusBar; // <-- Добавлено
+    private final StatusBar statusBar;
 
     /**
-     * Конструирует главное окно приложения.
+     * Конструктор главного окна приложения.
+     * Инициализирует компоненты и компоновку.
      */
     public MainFrame() {
-        renderer = new FractalRenderer();
-        viewModel = new FractalViewModel(renderer);
-        fileService = new FileService();
+        this(new FileService());
+    }
 
-        setTitle("Fractal Explorer"); // Изменено название
+    /**
+     * Конструктор для внедрения зависимостей (тестируемость, расширяемость).
+
+     * @param fileService файловый сервис
+     */
+    public MainFrame(FileService fileService) {
+
+        this.fileService = fileService;
+        this.viewModel = new FractalViewModel();
+        this.statusBar = new StatusBar();
+        this.renderer = new FractalRenderer();
+        this.fractalPanel = new FractalPanel(viewModel, renderer, statusBar);
+
+        initializeFrame();
+        layoutComponents();
+        addWindowListener(new WindowCloseHandler(this));
+    }
+
+    /**
+     * Получить используемый FractalRenderer (для WindowCloseHandler и др.)
+     */
+    public FractalRenderer getRenderer() {
+        return renderer;
+    }
+
+    /**
+     * Инициализация параметров окна.
+     */
+    private void initializeFrame() {
+        setTitle(TITLE);
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setLocationRelativeTo(null);
+        setMinimumSize(new Dimension(MIN_WIDTH, MIN_HEIGHT));
+    }
 
-        // Создание строки состояния ДО панели фрактала
-        statusBar = new StatusBar(); // <-- Создаем StatusBar
-
-        // Модифицируем создание FractalPanel и MenuBar, передавая StatusBar или MainFrame
-        fractalPanel = new FractalPanel(viewModel, renderer, this); // Передаем MainFrame
-        MenuBar menuBar = new MenuBar(viewModel, fileService, fractalPanel, this); // MenuBar уже получает MainFrame
-
-        setJMenuBar(menuBar);
-        setLayout(new BorderLayout()); // Убедимся, что используется BorderLayout
+    /**
+     * Компоновка компонентов.
+     */
+    private void layoutComponents() {
+        setLayout(new BorderLayout());
+        setJMenuBar(new MenuBar(viewModel, fileService, fractalPanel, statusBar));
         add(fractalPanel, BorderLayout.CENTER);
-        add(statusBar, BorderLayout.SOUTH); // <-- Добавляем StatusBar вниз
-
+        add(statusBar, BorderLayout.SOUTH);
         pack();
-        setMinimumSize(new Dimension(400, 300)); // Установим минимальный разумный размер
-
-        addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent e) {
-                handleWindowClose();
-            }
-        });
     }
 
     /**
      * Возвращает экземпляр строки состояния.
-     * @return StatusBar этого окна.
+     * @return StatusBar этого окна
      */
-    public StatusBar getStatusBar() { // <-- Метод для доступа к StatusBar
+    public StatusBar getStatusBar() {
         return statusBar;
     }
 
-    // Метод handleWindowClose остается без изменений
-
-    // Метод main остается без изменений
-    private void handleWindowClose() {
-        int confirmation = JOptionPane.showConfirmDialog(
-                this,
-                "Вы уверены, что хотите выйти?", // Сообщение на русском
-                "Подтверждение выхода", // Заголовок на русском
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.QUESTION_MESSAGE
-        );
-
-        if (confirmation == JOptionPane.YES_OPTION) {
-            System.out.println("Shutting down renderer...");
-            renderer.shutdown();
-            // Убедимся, что рендерер в панели предпросмотра анимации тоже остановлен, если диалог был открыт
-            // (Хотя закрытие диалога должно было это сделать)
-            System.out.println("Завершение работы приложения.");
-            dispose();
-            System.exit(0);
-        }
-    }
-
+    /**
+     * Точка входа в приложение.
+     * @param args аргументы командной строки
+     */
     public static void main(String[] args) {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());

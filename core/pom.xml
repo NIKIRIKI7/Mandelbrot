@@ -13,15 +13,16 @@
     <artifactId>mandelbrot-core</artifactId> <!-- Artifact ID for this module -->
     <name>Mandelbrot Core Logic</name>
     <packaging>jar</packaging> <!-- Default is jar, explicitly stating is fine -->
+    
+    <properties>
+        <!-- Явное указание версии Java для данного модуля -->
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+    </properties>
 
     <dependencies>
         <!-- Dependency on the external converter JAR -->
         <!-- Version is managed in the parent POM -->
-        <dependency>
-            <groupId>com.converter</groupId> <!-- Matches parent's management -->
-            <artifactId>converter</artifactId>
-            <version>1.0</version>
-        </dependency>
 
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

@@ -8,13 +8,13 @@ import javax.swing.SwingUtilities;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.event.MouseMotionListener;
+
 
 /**
  * Обрабатывает масштабирование (зум) в выделенную область левой кнопкой мыши.
  * Рисует рамку и полупрозрачную заливку для выделения.
  */
-public class MouseZoomListener extends MouseAdapter implements MouseMotionListener {
+public class MouseZoomListener extends MouseAdapter {
 
     private final FractalViewModel viewModel;
     private final JPanel panel;
@@ -62,9 +62,6 @@ public class MouseZoomListener extends MouseAdapter implements MouseMotionListen
             int y2 = endPoint.y;
 
             // Сохраняем точки перед сбросом для отрисовки (если нужно)
-            Point p1 = startPoint;
-            Point p2 = endPoint;
-
             startPoint = null;
             endPoint = null;
             panel.repaint(); // Убрать прямоугольник выделения

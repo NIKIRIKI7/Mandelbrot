@@ -3,7 +3,7 @@ package viewmodel;
 
 import model.ColorScheme;
 import model.FractalState;
-import model.Viewport; // Для констант и использования в методах
+
 import render.FractalRenderer;
 import viewmodel.commands.Command;
 import viewmodel.commands.PanCommand;
@@ -35,6 +35,12 @@ import java.util.Objects;
  * </p>
  */
 public class FractalViewModel {
+    // Конструктор по умолчанию для совместимости с MainFrame
+    public FractalViewModel() {
+        this.currentState = new FractalState();
+        this.undoManager = new UndoManager(100);
+    }
+
 
     /**
      * Имя свойства для события изменения состояния фрактала ({@link FractalState}).
@@ -56,7 +62,7 @@ public class FractalViewModel {
     /** Менеджер для хранения истории команд и выполнения отмены (Undo). */
     private final UndoManager undoManager; // = new UndoManager(100); Инициализируется в конструкторе
     /** Ссылка на рендерер (может не использоваться напрямую, но передается по архитектуре). */
-    private final FractalRenderer renderer; // Renderer теперь не используется напрямую для вызова render
+
 
     /** Базовое количество итераций для расчета при зуме. */
     private static final int BASE_ITERATIONS_FOR_ZOOM = 50; // Было MIN_ITERATIONS
@@ -76,7 +82,8 @@ public class FractalViewModel {
      * @throws IllegalArgumentException если {@code undoHistorySize <= 0}.
      */
     public FractalViewModel(FractalRenderer renderer, int undoHistorySize) {
-        this.renderer = Objects.requireNonNull(renderer, "Renderer не может быть null");
+        // Параметр renderer используется только для совместимости с архитектурой
+        Objects.requireNonNull(renderer, "Renderer не может быть null");
         if (undoHistorySize <= 0) {
              throw new IllegalArgumentException("Размер истории Undo должен быть положительным.");
         }

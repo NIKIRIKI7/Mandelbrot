@@ -15,6 +15,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public final class Viewport implements Serializable {
+    // Конструктор по умолчанию для совместимости с FractalState
+    public Viewport() {
+        this(-2.0, 1.0, -1.5, 1.5);
+    }
+
     private static final long serialVersionUID = 1L;
 
     /** Левая граница (минимальная вещественная координата). */
@@ -25,8 +30,7 @@ public final class Viewport implements Serializable {
     private double minY;
     /** Верхняя граница (максимальная мнимая координата). */
     private double maxY;
-    /** Соотношение сторон, при необходимости сохраняется отдельно. */
-    private double aspectRatio;
+
 
     /**
      * Область просмотра по умолчанию: X=[-2.0, 1.0], Y=[-1.5, 1.5].
@@ -61,7 +65,7 @@ public final class Viewport implements Serializable {
     public double getMaxY() { return maxY; }
     public void setMaxY(double maxY) { this.maxY = maxY; }
 
-    public void setAspectRatio(double aspectRatio) { this.aspectRatio = aspectRatio; }
+    
 
     /**
      * Ширина области (maxX - minX).

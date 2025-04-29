@@ -69,50 +69,145 @@ public class AnimationSetupDialog extends JDialog {
     }
 
     private void createAndLayoutPanels() {
+        // Создаем информационную панель с подсказками для работы (новый компонент)
+        JPanel helpPanel = createHelpPanel();
+        
         keyframeListPanel = new KeyframeListPanel(
                 keyframeListModel,
                 this::addCurrentViewAsKeyframe,
                 this::removeSelectedKeyframe,
                 this::handleListSelectionChange
         );
+        // Улучшаем заголовок для большей понятности
+        keyframeListPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(), 
+                "Шаг 1: Добавьте ключевые кадры анимации"));
 
         keyframePreviewPanel = new KeyframePreviewPanel(
                 this::loadSelectedToPreview,
-                this::updateSelectedKeyframeFromPreview // Переименован для ясности
+                this::updateSelectedKeyframeFromPreview
         );
+        // Улучшаем заголовок для большей понятности
+        keyframePreviewPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(), 
+                "Шаг 2: Просмотр и редактирование кадра"));
 
         keyframeParametersPanel = new KeyframeParametersPanel(
                 this::applyFieldsToPreview,
-                this::applyFieldsToSelectedKeyframe // <-- Передаем новый обработчик
+                this::applyFieldsToSelectedKeyframe
         );
+        // Улучшаем заголовок для большей понятности
+        keyframeParametersPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(), 
+                "Параметры кадра"));
 
         animationSettingsPanel = new AnimationSettingsPanel();
+        // Улучшаем заголовок для большей понятности
+        animationSettingsPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(), 
+                "Шаг 3: Настройте параметры анимации"));
 
         generationControlPanel = new GenerationControlPanel(
                 this::startOrCancelAnimationGeneration
         );
+        // Улучшаем заголовок для большей понятности
+        generationControlPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(), 
+                "Шаг 4: Сгенерируйте видео"));
 
-        // --- Размещение панелей (без изменений) ---
+        // --- Размещение панелей (улучшенная компоновка с подсказками) ---
         JPanel rightTopPanel = new JPanel(new BorderLayout(10, 10));
         rightTopPanel.add(keyframePreviewPanel, BorderLayout.CENTER);
         rightTopPanel.add(keyframeParametersPanel, BorderLayout.EAST);
 
+        // Добавляем визуальный разделитель между шагами для большей ясности
         JPanel rightPanel = new JPanel();
         rightPanel.setLayout(new BoxLayout(rightPanel, BoxLayout.Y_AXIS));
         rightPanel.add(rightTopPanel);
-        rightPanel.add(Box.createVerticalStrut(10));
+        rightPanel.add(Box.createVerticalStrut(15)); // Увеличен отступ для лучшей группировки
+        rightPanel.add(createSeparator("Настройки генерации")); // Визуальный разделитель
+        rightPanel.add(Box.createVerticalStrut(5));
         rightPanel.add(animationSettingsPanel);
         rightPanel.add(Box.createVerticalGlue());
-
+        
+        // Основной контент с разделением на левую и правую части
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, keyframeListPanel, rightPanel);
         splitPane.setDividerLocation(300);
         splitPane.setResizeWeight(0.35);
-
-        setLayout(new BorderLayout(10, 10));
-        add(splitPane, BorderLayout.CENTER);
-        add(generationControlPanel, BorderLayout.SOUTH);
-
-        ((JPanel) getContentPane()).setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        
+        // Добавляем панель помощи сверху для общего понимания процесса
+        JPanel contentPanel = new JPanel(new BorderLayout(10, 10));
+        contentPanel.add(helpPanel, BorderLayout.NORTH);
+        contentPanel.add(splitPane, BorderLayout.CENTER);
+        contentPanel.add(generationControlPanel, BorderLayout.SOUTH);
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        
+        setLayout(new BorderLayout());
+        add(contentPanel, BorderLayout.CENTER);
+    }
+    
+    /**
+     * Создает информационную панель с пошаговыми инструкциями для работы с редактором анимации.
+     * Применяет паттерн Decorator для улучшения внешнего вида компонента.
+     */
+    private JPanel createHelpPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), "Как создать анимацию:"),
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)));
+        
+        // Создаем многострочную метку с HTML-форматированием для пошаговой инструкции
+        String helpText = "<html><body style='width: 500px'>"
+                + "<b>1.</b> Добавьте ключевые кадры из основного окна или настройте их вручную.<br>"
+                + "<b>2.</b> Упорядочите кадры с помощью кнопок «Вверх» и «Вниз» для создания последовательности.<br>"
+                + "<b>3.</b> Для каждого кадра вы можете настроить параметры (масштаб, позиция, итерации, цвет).<br>"
+                + "<b>4.</b> Укажите продолжительность перехода между кадрами и частоту кадров (FPS).<br>"
+                + "<b>5.</b> Нажмите «Сгенерировать» для создания плавной анимации между ключевыми кадрами.<br><br>"
+                + "<i>Подсказка:</i> Анимация создает плавные переходы между всеми ключевыми кадрами по порядку."
+                + "</body></html>";
+        
+        JLabel helpLabel = new JLabel(helpText);
+        
+        // Добавляем кнопку-переключатель для показа/скрытия панели подсказок
+        JToggleButton toggleHelpButton = new JToggleButton("Скрыть подсказки");
+        toggleHelpButton.setSelected(true);
+        toggleHelpButton.addActionListener(e -> {
+            helpLabel.setVisible(toggleHelpButton.isSelected());
+            toggleHelpButton.setText(toggleHelpButton.isSelected() ? "Скрыть подсказки" : "Показать подсказки");
+            pack(); // Перерасчет размера диалога
+        });
+        
+        JPanel togglePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        togglePanel.add(toggleHelpButton);
+        
+        panel.add(helpLabel);
+        panel.add(togglePanel);
+        
+        return panel;
+    }
+    
+    /**
+     * Создает визуальный разделитель с текстовой меткой для группировки элементов интерфейса.
+     * @param title текст заголовка разделителя
+     * @return панель с разделителем
+     */
+    private JPanel createSeparator(String title) {
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridwidth = GridBagConstraints.REMAINDER;
+        gbc.weightx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        
+        JLabel label = new JLabel(title);
+        label.setFont(label.getFont().deriveFont(Font.BOLD));
+        panel.add(label, gbc);
+        
+        JSeparator separator = new JSeparator();
+        gbc.insets = new Insets(2, 0, 5, 0);
+        panel.add(separator, gbc);
+        
+        return panel;
     }
 
     // --- Обработчики событий ---

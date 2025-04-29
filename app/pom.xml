@@ -13,6 +13,12 @@
     <artifactId>mandelbrot-app</artifactId> <!-- Artifact ID for this module -->
     <name>Mandelbrot Swing Application</name>
     <packaging>jar</packaging> <!-- This module produces a JAR -->
+    
+    <properties>
+        <!-- Явное указание версии Java для данного модуля -->
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+    </properties>
 
     <dependencies>
         <!-- Dependency on the core logic module -->

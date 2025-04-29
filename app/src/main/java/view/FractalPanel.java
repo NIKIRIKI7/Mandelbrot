@@ -26,9 +26,17 @@ import java.util.function.Consumer;
  * Компонент JPanel, отвечающий за отображение фрактала.
  * Слушает обновления от {@link FractalViewModel}, обрабатывает взаимодействия с мышью
  * и управляет рендерингом через {@link FractalRenderer}.
- * Может опционально использовать StatusBar родительского MainFrame.
+ * Может опционально использовать StatusBar родительского (Window) SwingUtilities.getWindowAncestor(this).
  */
 public class FractalPanel extends JPanel implements PropertyChangeListener {
+    /**
+     * Дополнительный конструктор для совместимости с MainFrame.
+     * Использует дефолтный FractalRenderer.
+     */
+    public FractalPanel(FractalViewModel viewModel, StatusBar statusBar) {
+        this(viewModel, new FractalRenderer(), statusBar);
+    }
+
 
     protected final FractalViewModel viewModel; // <-- protected
     protected volatile BufferedImage fractalImage; // <-- protected
@@ -36,33 +44,27 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
     protected final MouseZoomListener zoomListener; // <-- protected
     protected final MousePanListener panListener; // <-- protected
     protected volatile boolean isRendering = false; // <-- protected
-    protected final MainFrame mainFrame; // <-- protected, может быть null
+    protected final StatusBar statusBar;
 
     /**
      * Конструирует FractalPanel.
      *
-     * @param viewModel ViewModel приложения.
-     * @param renderer Рендерер фрактала.
-     * @param mainFrame Родительское окно {@link MainFrame} для доступа к строке состояния (может быть null).
+     * @param viewModel ViewModel для управления состоянием
+     * @param renderer рендерер фракталов
+     * @param statusBar строка состояния
      */
-    public FractalPanel(FractalViewModel viewModel, FractalRenderer renderer, MainFrame mainFrame) { // <-- mainFrame может быть null
+    public FractalPanel(FractalViewModel viewModel, FractalRenderer renderer, StatusBar statusBar) {
         this.viewModel = viewModel;
         this.renderer = renderer;
-        this.mainFrame = mainFrame; // <-- Сохраняем ссылку (может быть null)
+        this.statusBar = statusBar;
         this.fractalImage = null;
-
-        this.viewModel.addPropertyChangeListener(this);
-        setBackground(Color.BLACK);
-        setOpaque(true);
-
-        zoomListener = new MouseZoomListener(viewModel, this);
-        panListener = new MousePanListener(viewModel, this);
-
+        this.zoomListener = new MouseZoomListener(viewModel, this);
+        this.panListener = new MousePanListener(viewModel, this);
+        setFocusable(true);
         addMouseListener(zoomListener);
         addMouseMotionListener(zoomListener);
         addMouseListener(panListener);
         addMouseMotionListener(panListener);
-
         addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
@@ -80,6 +82,10 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
             }
         });
 
+        viewModel.addPropertyChangeListener(this);
+        setBackground(Color.BLACK);
+        setOpaque(true);
+
         addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -91,8 +97,8 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
         });
 
         // Начальный статус при инициализации (только если StatusBar есть)
-        if (mainFrame != null && mainFrame.getStatusBar() != null) {
-            mainFrame.getStatusBar().setStatus("Инициализация...");
+        if ((Window) SwingUtilities.getWindowAncestor(this) != null) {
+            statusBar.setStatus("Инициализация...");
         } else {
             System.out.println("FractalPanel: StatusBar не доступен, инициализация без статуса.");
         }
@@ -106,12 +112,10 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
         int w = getWidth();
         int h = getHeight();
         FractalState currentState = viewModel.getCurrentState();
-        StatusBar statusBar = (mainFrame != null) ? mainFrame.getStatusBar() : null; // Получаем StatusBar безопасно
-
         if (w <= 0 || h <= 0 || currentState == null) {
             String errorMsg = "Невозможно открыть окно Жюлиа: некорректный размер панели или состояние фрактала.";
             System.err.println(errorMsg);
-            if (statusBar != null) statusBar.setStatus("Ошибка: " + errorMsg);
+            statusBar.setStatus("Ошибка: " + errorMsg);
             JOptionPane.showMessageDialog(this, errorMsg, "Ошибка", JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -121,14 +125,14 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
         if (c == null) {
             String errorMsg = "Невозможно открыть окно Жюлиа: не удалось преобразовать координаты.";
             System.err.println(errorMsg);
-            if (statusBar != null) statusBar.setStatus("Ошибка: " + errorMsg);
+            statusBar.setStatus("Ошибка: " + errorMsg);
             JOptionPane.showMessageDialog(this, errorMsg, "Ошибка", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
         ColorScheme currentScheme = currentState.getColorScheme();
         int currentIterations = currentState.getMaxIterations();
-        JFrame owner = (JFrame) SwingUtilities.getWindowAncestor(this); // Может быть JuliaSetWindow или MainFrame
+        JFrame owner = (JFrame) SwingUtilities.getWindowAncestor(this);
 
         SwingUtilities.invokeLater(() -> {
             JuliaSetWindow juliaWindow = new JuliaSetWindow(owner, c, currentScheme, currentIterations);
@@ -144,7 +148,7 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
     public void triggerRender() {
         int width = getWidth();
         int height = getHeight();
-        StatusBar statusBar = (mainFrame != null) ? mainFrame.getStatusBar() : null; // Получаем StatusBar безопасно
+        if (statusBar != null) // Получаем StatusBar безопасно
 
         if (!isShowing() || width <= 0 || height <= 0 || renderer == null) {
             String msg = (width <= 0 || height <= 0) ? "Некорректный размер панели." : "Панель не готова.";
@@ -274,7 +278,7 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
                 SwingUtilities.invokeLater(this::triggerRender);
             }
             // Обновляем StatusBar после изменения состояния (если он есть и рендер не идет)
-            StatusBar statusBar = (mainFrame != null) ? mainFrame.getStatusBar() : null;
+            if (statusBar != null)
             if (statusBar != null && !isRendering()) {
                 FractalState newState = (FractalState) evt.getNewValue();
                 if (newState != null && newState.getViewport() != null) {

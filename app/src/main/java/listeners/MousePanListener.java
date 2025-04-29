@@ -15,7 +15,7 @@ import java.awt.event.MouseMotionListener;
  * перетаскивания правой кнопки мыши.
  * Реализует {@link MouseAdapter} и {@link MouseMotionListener}.
  */
-public class MousePanListener extends MouseAdapter implements MouseMotionListener {
+public class MousePanListener extends MouseAdapter {
 
     /** ViewModel для доступа к состоянию и выполнения панорамирования. */
     private final FractalViewModel viewModel;
