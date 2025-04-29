@@ -8,11 +8,11 @@ import model.NonlinearRGBScheme;
 import services.FileService;
 import viewmodel.FractalViewModel;
 import services.AnimationService;
+import shortcuts.KeyboardShortcutManager;
 import java.awt.Window;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
-import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -78,34 +78,110 @@ public class MenuBar extends JMenuBar {
         updateColorSchemeSelection();
     }
 
+    /**
+     * Создает меню Файл с применением паттерна Command для горячих клавиш.
+     */
     private void createFileMenu() {
         JMenu fileMenu = new JMenu("Файл");
         fileMenu.setMnemonic(KeyEvent.VK_F);
 
-        JMenuItem loadItem = new JMenuItem("Загрузить состояние...");
-        loadItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, ActionEvent.CTRL_MASK));
-        loadItem.addActionListener(e -> loadFractal());
+        // Настраиваем команды для пунктов меню
+        JMenuItem loadItem = new JMenuItem();
+        KeyboardShortcutManager.getInstance().registerShortcut(
+            KeyboardShortcutManager.SHORTCUT_OPEN, 
+            createLoadCommand());
+        KeyboardShortcutManager.getInstance().bindMenuItemToShortcut(
+            loadItem, KeyboardShortcutManager.SHORTCUT_OPEN);
         fileMenu.add(loadItem);
 
-        JMenuItem saveItem = new JMenuItem("Сохранить...");
-        saveItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S, ActionEvent.CTRL_MASK));
-        saveItem.addActionListener(e -> saveUsingFileChooser());
+        JMenuItem saveItem = new JMenuItem();
+        KeyboardShortcutManager.getInstance().registerShortcut(
+            KeyboardShortcutManager.SHORTCUT_SAVE, 
+            createSaveCommand());
+        KeyboardShortcutManager.getInstance().bindMenuItemToShortcut(
+            saveItem, KeyboardShortcutManager.SHORTCUT_SAVE);
         fileMenu.add(saveItem);
 
         fileMenu.addSeparator();
 
-        JMenuItem exitItem = new JMenuItem("Выход");
-        exitItem.setMnemonic(KeyEvent.VK_X);
-        exitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Q, ActionEvent.CTRL_MASK));
-        exitItem.addActionListener(e -> {
-            Window window = SwingUtilities.getWindowAncestor(this);
-            if (window != null) {
-                window.dispatchEvent(new java.awt.event.WindowEvent(window, java.awt.event.WindowEvent.WINDOW_CLOSING));
-            }
-        });
+        JMenuItem exitItem = new JMenuItem();
+        KeyboardShortcutManager.getInstance().registerShortcut(
+            KeyboardShortcutManager.SHORTCUT_EXIT, 
+            createExitCommand());
+        KeyboardShortcutManager.getInstance().bindMenuItemToShortcut(
+            exitItem, KeyboardShortcutManager.SHORTCUT_EXIT);
         fileMenu.add(exitItem);
 
         add(fileMenu);
+    }
+    
+    /**
+     * Создает команду загрузки файла (паттерн Command).
+     */
+    private shortcuts.AppCommand createLoadCommand() {
+        return new shortcuts.AppCommand() {
+            @Override
+            public String getName() {
+                return "Загрузить состояние...";
+            }
+            
+            @Override
+            public void execute() {
+                loadFractal();
+            }
+            
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+        };
+    }
+    
+    /**
+     * Создает команду сохранения файла (паттерн Command).
+     */
+    private shortcuts.AppCommand createSaveCommand() {
+        return new shortcuts.AppCommand() {
+            @Override
+            public String getName() {
+                return "Сохранить...";
+            }
+            
+            @Override
+            public void execute() {
+                saveUsingFileChooser();
+            }
+            
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+        };
+    }
+    
+    /**
+     * Создает команду выхода из приложения (паттерн Command).
+     */
+    private shortcuts.AppCommand createExitCommand() {
+        return new shortcuts.AppCommand() {
+            @Override
+            public String getName() {
+                return "Выход";
+            }
+            
+            @Override
+            public void execute() {
+                Window window = SwingUtilities.getWindowAncestor(MenuBar.this);
+                if (window != null) {
+                    window.dispatchEvent(new java.awt.event.WindowEvent(window, java.awt.event.WindowEvent.WINDOW_CLOSING));
+                }
+            }
+            
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+        };
     }
 
     private void saveUsingFileChooser() {
@@ -178,17 +254,45 @@ public class MenuBar extends JMenuBar {
     }
 
 
+    /**
+     * Создает меню Правка с применением паттерна Command для горячих клавиш.
+     */
     private void createEditMenu() {
-        JMenu editMenu = new JMenu("Правка"); // Локализация
+        JMenu editMenu = new JMenu("Правка");
         editMenu.setMnemonic(KeyEvent.VK_E);
 
-        undoMenuItem = new JMenuItem("Отменить"); // Локализация
-        undoMenuItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Z, ActionEvent.CTRL_MASK));
-        undoMenuItem.addActionListener(e -> viewModel.undoLastAction());
-        undoMenuItem.setEnabled(false);
+        undoMenuItem = new JMenuItem();
+        // Регистрируем команду Undo
+        KeyboardShortcutManager.getInstance().registerShortcut(
+            KeyboardShortcutManager.SHORTCUT_UNDO, 
+            createUndoCommand());
+        KeyboardShortcutManager.getInstance().bindMenuItemToShortcut(
+            undoMenuItem, KeyboardShortcutManager.SHORTCUT_UNDO);
         editMenu.add(undoMenuItem);
 
         add(editMenu);
+    }
+    
+    /**
+     * Создает команду отмены действия (паттерн Command).
+     */
+    private shortcuts.AppCommand createUndoCommand() {
+        return new shortcuts.AppCommand() {
+            @Override
+            public String getName() {
+                return "Отменить";
+            }
+            
+            @Override
+            public void execute() {
+                viewModel.undoLastAction();
+            }
+            
+            @Override
+            public boolean isEnabled() {
+                return viewModel.getUndoManager().canUndo();
+            }
+        };
     }
 
     private void createViewMenu() {
@@ -229,10 +333,23 @@ public class MenuBar extends JMenuBar {
         add(animationMenu);
     }
 
+    /**
+     * Обновляет состояние пункта меню Undo.
+     * @param canUndo Можно ли выполнить отмену действия
+     */
     private void updateUndoState(boolean canUndo) {
-        if (undoMenuItem != null) {
-            undoMenuItem.setEnabled(canUndo);
-        }
+        undoMenuItem.setEnabled(canUndo);
+        // Также обновляем состояние всех команд горячих клавиш
+        updateShortcutStates();
+    }
+    
+    /**
+     * Обновляет состояние всех команд горячих клавиш.
+     * Вызывается после изменений, которые могут повлиять на доступность команд.
+     */
+    private void updateShortcutStates() {
+        SwingUtilities.invokeLater(() -> 
+            KeyboardShortcutManager.getInstance().updateMenuItemStates(this));
     }
 
     // --- Обработчики действий меню с интеграцией StatusBar ---

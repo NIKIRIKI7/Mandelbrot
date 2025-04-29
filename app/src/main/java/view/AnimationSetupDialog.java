@@ -311,12 +311,13 @@ public class AnimationSetupDialog extends JDialog {
             try {
                 FractalState previewState = keyframePreviewPanel.getCurrentState();
                 if (previewState != null) {
-                    Keyframe selectedKeyframe = keyframeListModel.getElementAt(selectedIndex); // Может кинуть IndexOutOfBounds
-                    String existingName = selectedKeyframe.getName();
-                    Keyframe updatedKeyframe = new Keyframe(previewState, existingName);
+                    // Создаем новый кадр с актуальным именем, сгенерированным из данных Viewport
+                    Keyframe updatedKeyframe = new Keyframe(previewState);
                     keyframeListModel.set(selectedIndex, updatedKeyframe);
                     keyframeParametersPanel.updateFields(previewState);
-                    generationControlPanel.setStatus("Кадр '" + updatedKeyframe.getName() + "' обновлен из предпросмотра.");
+                    // Обновляем отображение списка, чтобы информация о кадре обновилась
+                    keyframeListPanel.refreshList();
+                    generationControlPanel.setStatus("Кадр обновлен из предпросмотра.");
                 } else {
                     showError("Не удалось получить состояние из панели предпросмотра.");
                 }
@@ -385,14 +386,17 @@ public class AnimationSetupDialog extends JDialog {
                     currentKeyState.getFractalFunction() // Функция из кадра
             );
 
-            // 4. Создаем новый объект Keyframe
-            Keyframe updatedKeyframe = new Keyframe(newStateForKeyframe, selectedKeyframe.getName());
+            // 4. Создаем новый объект Keyframe, чтобы генерировалось новое имя на основе Viewport
+            Keyframe updatedKeyframe = new Keyframe(newStateForKeyframe);
 
             // 5. Заменяем старый кадр на новый в модели списка
             keyframeListModel.set(selectedIndex, updatedKeyframe);
+            
+            // Обновляем отображение списка, чтобы имя обновилось
+            keyframeListPanel.refreshList();
 
             // 6. Обновляем UI
-            generationControlPanel.setStatus("Параметры применены к кадру '" + updatedKeyframe.getName() + "'.");
+            generationControlPanel.setStatus("Параметры применены к кадру.");
             // Поля параметров уже показывают введенные значения.
             // Предпросмотр не меняем, так как применили напрямую к кадру.
 
@@ -477,8 +481,11 @@ public class AnimationSetupDialog extends JDialog {
 
             @Override
             protected void process(List<String> chunks) { // Обработка сообщений статуса в EDT
-                if (!isCancelled() && !chunks.isEmpty()) {
-                    generationControlPanel.setStatus(chunks.get(chunks.size() - 1));
+                // Скрываем текстовые обновления о рендеринге
+                if (!chunks.isEmpty()) {
+                    // Содержимое chunks игнорируем, только обновляем статус
+                    // чтобы показать, что процесс идет, но без детальной информации
+                    generationControlPanel.setStatus("Генерация анимации...");
                 }
             }
 
@@ -529,7 +536,22 @@ public class AnimationSetupDialog extends JDialog {
             private void publishProgress(double progress) {
                 SwingUtilities.invokeLater(() -> {
                     if (!isCancelled()) {
-                        generationControlPanel.setProgress((int) (progress * 100));
+                        // Обновляем индикатор прогресса
+                        int progressPercent = (int) (progress * 100);
+                        generationControlPanel.setProgress(progressPercent);
+                        
+                        // Обновляем статус в зависимости от этапа
+                        String statusMsg = "Генерация анимации...";
+                        if (progressPercent == 0) {
+                            statusMsg = "Подготовка к рендерингу...";
+                        } else if (progressPercent > 0 && progressPercent < 50) {
+                            statusMsg = "Генерация кадров...";
+                        } else if (progressPercent >= 50 && progressPercent < 90) {
+                            statusMsg = "Создание видео...";
+                        } else if (progressPercent >= 90 && progressPercent < 100) {
+                            statusMsg = "Завершение создания анимации...";
+                        }
+                        generationControlPanel.setStatus(statusMsg);
                     }
                 });
             }

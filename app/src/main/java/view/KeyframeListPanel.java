@@ -180,11 +180,43 @@ public class KeyframeListPanel extends JPanel {
     /**
      * Снимает выделение со всех элементов списка.
      */
-    public void clearSelection() { // <-- Добавленный метод
+    public void clearSelection() { 
         keyframeList.clearSelection();
         updateButtonStates(); // Обновляем кнопки после снятия выделения
     }
 
+    /**
+     * Обновляет отображение списка, чтобы отразить изменения в модели данных.
+     * Гарантирует, что все изменения будут правильно отображены в UI.
+     */
+    public void refreshList() {
+        int selectedIndex = keyframeList.getSelectedIndex();
+        
+        // Сохраняем все кадры во временном массиве
+        Keyframe[] frames = new Keyframe[keyframeListModel.getSize()];
+        for (int i = 0; i < frames.length; i++) {
+            frames[i] = keyframeListModel.getElementAt(i);
+        }
+        
+        // Если список непуст, пересоздаём его, чтобы обновились все поля
+        if (frames.length > 0) {
+            SwingUtilities.invokeLater(() -> {
+                keyframeListModel.clear();  // Очищаем модель
+                for (Keyframe frame : frames) {
+                    keyframeListModel.addElement(frame);  // Добавляем обратно все элементы
+                }
+                
+                // Восстанавливаем выделение, если было
+                if (selectedIndex >= 0 && selectedIndex < keyframeListModel.getSize()) {
+                    keyframeList.setSelectedIndex(selectedIndex);
+                    keyframeList.ensureIndexIsVisible(selectedIndex);
+                }
+            });
+        } else {
+            // Просто обновляем отображение, если список пуст
+            keyframeList.repaint();
+        }
+    }
 
     /**
      * Гарантирует, что элемент с указанным индексом виден в области прокрутки.
