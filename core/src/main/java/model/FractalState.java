@@ -3,8 +3,9 @@ package model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import math.FractalFunction; // <-- Добавлен импорт
-import math.MandelbrotFunction; // <-- Добавлен импорт для дефолтной функции
+import math.FractalFunction;
+import math.MandelbrotFunction;
+
 import java.io.Serializable;
 import java.util.Objects;
 

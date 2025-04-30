@@ -1,7 +1,7 @@
 package view.handlers;
 
-import view.MainFrame;
 import render.FractalRenderer;
+import view.MainFrame;
 
 import javax.swing.*;
 import java.awt.event.WindowAdapter;

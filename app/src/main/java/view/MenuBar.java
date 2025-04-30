@@ -5,14 +5,14 @@ import model.ColorScheme;
 import model.FractalState;
 import model.GrayscaleScheme;
 import model.NonlinearRGBScheme;
-import services.FileService;
-import viewmodel.FractalViewModel;
 import services.AnimationService;
+import services.FileService;
 import shortcuts.KeyboardShortcutManager;
-import java.awt.Window;
+import viewmodel.FractalViewModel;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -116,7 +116,7 @@ public class MenuBar extends JMenuBar {
     }
     
     /**
-     * Создает команду загрузки файла (паттерн Command).
+     * Создает команду загрузки файла.
      */
     private shortcuts.AppCommand createLoadCommand() {
         return new shortcuts.AppCommand() {
@@ -254,9 +254,6 @@ public class MenuBar extends JMenuBar {
     }
 
 
-    /**
-     * Создает меню Правка с применением паттерна Command для горячих клавиш.
-     */
     private void createEditMenu() {
         JMenu editMenu = new JMenu("Правка");
         editMenu.setMnemonic(KeyEvent.VK_E);
@@ -275,6 +272,16 @@ public class MenuBar extends JMenuBar {
     
     /**
      * Создает команду отмены действия (паттерн Command).
+     * 
+     * Реализует интерфейс AppCommand, который является ключевым компонентом паттерна Command:
+     * 1. getName() - возвращает отображаемое название команды для элемента меню
+     * 2. execute() - выполняет саму команду отмены через ViewModel
+     * 3. isEnabled() - определяет, доступна ли команда в данный момент,
+     *    проверяя наличие действий для отмены в UndoManager
+     * 
+     * Эта анонимная реализация AppCommand используется как для пункта меню,
+     * так и для горячей клавиши, что обеспечивает единую логику выполнения
+     * команды отмены независимо от способа её вызова.
      */
     private shortcuts.AppCommand createUndoCommand() {
         return new shortcuts.AppCommand() {

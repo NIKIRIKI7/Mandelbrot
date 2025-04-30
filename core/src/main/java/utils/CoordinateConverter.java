@@ -2,7 +2,8 @@
 package utils;
 
 import model.Viewport;
-import java.awt.geom.Point2D; // Используем Point2D для точности с double
+
+import java.awt.geom.Point2D;
 
 /**
  * Утилитарный класс для преобразования координат между системой пиксельных

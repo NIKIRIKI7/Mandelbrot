@@ -1,11 +1,9 @@
 package listeners;
 
-import viewmodel.FractalViewModel; // core
+import viewmodel.FractalViewModel;
 
-import javax.swing.JPanel;
-import javax.swing.SwingUtilities;
-import java.awt.Cursor;
-import java.awt.Point;
+import javax.swing.*;
+import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionListener;

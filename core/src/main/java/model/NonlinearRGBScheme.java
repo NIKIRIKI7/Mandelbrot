@@ -1,8 +1,8 @@
 // File: core/src/main/java/model/NonlinearRGBScheme.java
 package model;
 
-import java.awt.Color;
-import java.io.Serializable; // Импорт добавлен для полноты
+import java.awt.*;
+import java.io.Serializable;
 
 /**
  * Пример нелинейной цветовой схемы RGB для визуализации фракталов.

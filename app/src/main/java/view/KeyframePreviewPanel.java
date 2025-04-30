@@ -2,43 +2,42 @@
 package view;
 
 import model.FractalState;
+import model.Viewport; // Добавлен импорт
 import render.FractalRenderer;
 import viewmodel.FractalViewModel;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import java.awt.*;
-import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
-import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
  * Панель, предназначенная для интерактивного предпросмотра и редактирования
  * одного ключевого кадра анимации. Содержит {@link FractalPanel} с собственными
- * {@link FractalViewModel} и {@link FractalRenderer}, а также кнопки для загрузки
- * состояния выбранного кадра и для обновления выбранного кадра текущим состоянием предпросмотра.
+ * {@link FractalViewModel} и {@link FractalRenderer}, а также кнопку для загрузки
+ * состояния выбранного кадра.
+ * Изменения в предпросмотре (масштаб, перемещение) автоматически применяются
+ * к выбранному кадру.
  */
 public class KeyframePreviewPanel extends JPanel {
 
     private final FractalPanel previewPanel;
     private final FractalViewModel previewViewModel;
     private final FractalRenderer previewRenderer;
-    private final JButton loadToPreviewButton;
-    private final JButton updateKeyframeButton;
+    // Кнопки удалены по запросу пользователя
+    // private final JButton loadToPreviewButton;
+    // private final JButton undoButton;
+    private Consumer<model.Viewport> viewportChangeListener; // Слушатель для уведомления об изменениях
 
     /**
      * Создает панель предпросмотра ключевого кадра.
      *
-     * @param loadAction Слушатель {@link ActionListener} для кнопки "Загрузить сюда".
-     *                   Вызывается, когда пользователь хочет загрузить состояние
-     *                   выбранного в списке кадра в эту панель.
-     * @param updateAction Слушатель {@link ActionListener} для кнопки "Запомнить вид в кадр".
-     *                     Вызывается, когда пользователь хочет обновить выбранный в списке
-     *                     кадр текущим состоянием этой панели предпросмотра.
+     * @param viewportChangeListener Слушатель, который будет уведомлен об изменении Viewport в этой панели.
      */
-    public KeyframePreviewPanel(ActionListener loadAction, ActionListener updateAction) {
+    public KeyframePreviewPanel(Consumer<model.Viewport> viewportChangeListener) {
+        this.viewportChangeListener = viewportChangeListener;
         setLayout(new BorderLayout(5, 5));
         setBorder(new TitledBorder("Предпросмотр и интерактивное редактирование"));
 
@@ -111,39 +110,60 @@ public class KeyframePreviewPanel extends JPanel {
             }
         };
 
+        // Добавляем слушатель изменений Viewport во ViewModel предпросмотра
+        previewViewModel.addViewportChangeListener((Viewport newViewport) -> { // Явно указываем тип
+            if (this.viewportChangeListener != null) {
+                this.viewportChangeListener.accept(newViewport); // Приведение типа больше не нужно
+            }
+        });
 
         add(previewPanel, BorderLayout.CENTER);
 
-        // Кнопки управления
-        loadToPreviewButton = new JButton("Загрузить сюда");
-        loadToPreviewButton.setToolTipText("Загрузить состояние выделенного кадра для предпросмотра и редактирования");
-        loadToPreviewButton.setEnabled(false); // Активна только при выборе кадра в списке
-        if (loadAction != null) {
-            loadToPreviewButton.addActionListener(loadAction);
-        }
+        // Кнопки удалены по запросу пользователя
+        // loadToPreviewButton = new JButton("Загрузить сюда");
+        // loadToPreviewButton.setToolTipText("Загрузить состояние выделенного кадра для предпросмотра и редактирования");
+        // loadToPreviewButton.setEnabled(false); // Активна только при выборе кадра в списке
 
-        updateKeyframeButton = new JButton("Запомнить вид в кадр"); // <-- Переименовано
-        updateKeyframeButton.setToolTipText("Обновить выделенный ключевой кадр текущим видом из этой панели предпросмотра"); // <-- Уточнен тултип
-        updateKeyframeButton.setEnabled(false); // Активна только при выборе кадра в списке
-        if (updateAction != null) {
-            updateKeyframeButton.addActionListener(updateAction);
-        }
+        // undoButton = new JButton("Откатить");
+        // undoButton.setToolTipText("Отменить последнее изменение масштаба или панорамирования в этом предпросмотре");
+        // undoButton.setEnabled(false); // Изначально недоступна
+        // undoButton.addActionListener(e -> previewViewModel.undoLastAction());
 
-        JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        buttonsPanel.add(loadToPreviewButton);
-        buttonsPanel.add(updateKeyframeButton);
-        add(buttonsPanel, BorderLayout.SOUTH);
+        // JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        // buttonsPanel.add(loadToPreviewButton);
+        // buttonsPanel.add(undoButton);
+        // add(buttonsPanel, BorderLayout.SOUTH);
+
+        // Добавляем слушатель для управления доступностью кнопки Undo
+        // previewViewModel.addPropertyChangeListener(evt -> { // Добавляем универсального слушателя
+        //     // Проверяем, что это нужное нам свойство
+        //     if (FractalViewModel.PROPERTY_CAN_UNDO.equals(evt.getPropertyName())) {
+        //         // Проверяем тип нового значения и обновляем состояние кнопки
+        //         if (evt.getNewValue() instanceof Boolean) {
+        //             undoButton.setEnabled((Boolean) evt.getNewValue());
+        //         }
+        //     }
+        // });
     }
 
     /**
-     * Загружает указанное состояние фрактала в {@link FractalViewModel} этой панели предпросмотра.
-     * Это вызовет перерисовку {@link FractalPanel}.
-     *
-     * @param state Состояние {@link FractalState} для загрузки и отображения. Если null,
-     *              панель может отобразить состояние по умолчанию или остаться пустой.
+     * Загружает состояние фрактала для предпросмотра.
+     * @param state Состояние для отображения, или null для очистки.
      */
     public void loadState(FractalState state) {
-        previewViewModel.loadState(Objects.requireNonNullElseGet(state, FractalState::createDefault));
+        if (state != null) {
+            previewViewModel.loadState(state);
+            System.out.println("Состояние загружено: " + state.toString());
+        } else {
+            System.out.println("Состояние загружено: null");
+        }
+        // Автоматически запускаем рендер после загрузки состояния
+        System.out.println("Размеры панели предпросмотра: " + previewPanel.getWidth() + "x" + previewPanel.getHeight());
+        if (previewPanel.getWidth() <= 0 || previewPanel.getHeight() <= 0) {
+            System.out.println("Пропуск рендера предпросмотра: " + previewPanel.getWidth() + "x" + previewPanel.getHeight());
+        } else {
+            previewPanel.triggerRender();
+        }
     }
 
     /**
@@ -156,16 +176,15 @@ public class KeyframePreviewPanel extends JPanel {
     }
 
     /**
-     * Устанавливает состояние активности (enabled/disabled) для кнопок
-     * "Загрузить сюда" и "Запомнить вид в кадр".
+     * Устанавливает состояние активности (enabled/disabled) для кнопки
+     * "Загрузить сюда".
      * Обычно вызывается при изменении выбора в списке ключевых кадров.
      *
-     * @param enabled {@code true}, чтобы сделать кнопки активными, {@code false} - неактивными.
+     * @param enabled {@code true}, чтобы сделать кнопку активной, {@code false} - неактивной.
      */
-    public void setControlButtonsEnabled(boolean enabled) {
-        loadToPreviewButton.setEnabled(enabled);
-        updateKeyframeButton.setEnabled(enabled);
-    }
+    // public void setLoadButtonEnabled(boolean enabled) {
+    //     loadToPreviewButton.setEnabled(enabled);
+    // }
 
     /**
      * Останавливает потоки рендерера {@link FractalRenderer}, связанного с этой панелью предпросмотра.
@@ -187,14 +206,30 @@ public class KeyframePreviewPanel extends JPanel {
     public void setEnabled(boolean enabled) {
         super.setEnabled(enabled);
         previewPanel.setEnabled(enabled); // Блокируем саму панель фрактала
-        // Активность кнопок управляется через setControlButtonsEnabled в зависимости от выбора в списке
-        // Но если панель выключается глобально, кнопки тоже должны выключиться
-        if (!enabled) {
-            loadToPreviewButton.setEnabled(false);
-            updateKeyframeButton.setEnabled(false);
-        } else {
-            // При включении состояние кнопок зависит от внешнего фактора (выбора кадра)
-            // Метод setUIEnabled в диалоге должен вызвать setControlButtonsEnabled
-        }
+        // Активность кнопки управляется через setLoadButtonEnabled в зависимости от выбора в списке
+        // Но если панель выключается глобально, кнопка тоже должна выключиться
+        // if (!enabled) {
+        //     loadToPreviewButton.setEnabled(false);
+        //     undoButton.setEnabled(false);
+        // } else {
+        //     // При включении состояние кнопки загрузки зависит от внешнего фактора (выбора кадра)
+        //     // Метод setUIEnabled в диалоге должен вызвать setLoadButtonEnabled
+        // }
+    }
+
+    /**
+     * Добавляет слушателя изменений Viewport.
+     * @param listener слушатель
+     */
+    public void setViewportChangeListener(Consumer<model.Viewport> listener) {
+        this.viewportChangeListener = listener;
+    }
+
+    /**
+     * Возвращает текущий ViewModel панели предпросмотра.
+     * @return FractalViewModel
+     */
+    public FractalViewModel getPreviewViewModel() {
+        return previewViewModel;
     }
 }

@@ -9,7 +9,6 @@ import model.Viewport;
 import render.FractalRenderer;
 import utils.ComplexNumber;
 import viewmodel.FractalViewModel;
-// import services.FileService; // Закомментировано, так как меню не используется
 
 import javax.swing.*;
 import java.awt.*;

@@ -1,8 +1,8 @@
 // File: core/src/main/java/model/GrayscaleScheme.java
 package model;
 
-import java.awt.Color;
-import java.io.Serializable; // Импорт добавлен для полноты
+import java.awt.*;
+import java.io.Serializable;
 
 /**
  * Простая цветовая схема в оттенках серого для визуализации фракталов.

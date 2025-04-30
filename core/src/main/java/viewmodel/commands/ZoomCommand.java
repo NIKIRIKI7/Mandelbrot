@@ -1,10 +1,10 @@
 // File: core/src/main/java/viewmodel/commands/ZoomCommand.java
 package viewmodel.commands;
 
+import iteration.IterationStrategy;
 import model.FractalState;
 import model.Viewport;
-import viewmodel.FractalViewModel; // Добавлен импорт для доступа к ViewModel
-import iteration.IterationStrategy;
+import viewmodel.FractalViewModel;
 
 import java.util.Objects;
 

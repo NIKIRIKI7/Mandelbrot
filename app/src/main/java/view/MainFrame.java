@@ -2,16 +2,13 @@
 package view;
 
 
-import services.FileService;
-import viewmodel.FractalViewModel;
 import render.FractalRenderer;
+import services.FileService;
+import view.handlers.WindowCloseHandler;
+import viewmodel.FractalViewModel;
 
 import javax.swing.*;
 import java.awt.*;
-
-
-// Новый импорт для WindowCloseHandler
-import view.handlers.WindowCloseHandler;
 
 
 

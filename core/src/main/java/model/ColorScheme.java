@@ -1,11 +1,11 @@
 // File: core/src/main/java/model/ColorScheme.java
 package model;
 
-import java.awt.Color;
-import java.io.Serializable;
-
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
+import java.awt.*;
+import java.io.Serializable;
 
 /**
  * Функциональный интерфейс, определяющий стратегию преобразования

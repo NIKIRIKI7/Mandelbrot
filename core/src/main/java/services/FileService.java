@@ -1,20 +1,18 @@
 package services;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import model.FractalState;
 import model.Viewport;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
 import java.util.Objects;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-
 /**
- * Сервисный класс (Фасад), предоставляющий операции для работы с файлами,
- * связанные с приложением визуализации фракталов.
  * <p>
  * Отвечает за:
  * <ul>
@@ -35,6 +33,23 @@ public class FileService {
 
     /**
      * Сохраняет состояние фрактала в файл .frac (JSON).
+     * 
+     * Реализация сохранения использует библиотеку Jackson для сериализации объектов:
+     * 1. Создаётся ObjectMapper - центральный класс Jackson для сериализации/десериализации
+     * 2. Конфигурируется поведение маппера для обеспечения обратной совместимости
+     *    (FAIL_ON_UNKNOWN_PROPERTIES=false позволяет игнорировать новые свойства при чтении старых файлов)
+     * 3. Метод writerWithDefaultPrettyPrinter() создаёт писатель с форматированием JSON для читаемости
+     * 4. Метод writeValue() сериализует объект FractalState в JSON и записывает в указанный файл
+     * 
+     * Процесс сериализации:
+     * - Jackson анализирует все поля объекта FractalState с помощью рефлексии
+     * - Для каждого поля определяется соответствующее JSON-представление
+     * - Вложенные объекты (как Viewport в FractalState) также рекурсивно сериализуются
+     * - Итоговый JSON преобразуется в строку и записывается в файл
+     * 
+     * @param state Объект FractalState, содержащий параметры фрактала для сохранения
+     * @param file Файл, в который будет сохранено состояние (.frac)
+     * @throws IOException При ошибках ввода-вывода или проблемах сериализации
      */
     public void saveFractalState(FractalState state, File file) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
@@ -45,6 +60,26 @@ public class FileService {
 
     /**
      * Загружает состояние фрактала из файла .frac (JSON).
+     * 
+     * Процесс десериализации с использованием Jackson:
+     * 1. Создаётся и конфигурируется ObjectMapper для чтения JSON
+     * 2. Настройка FAIL_ON_UNKNOWN_PROPERTIES=false имеет критическое значение для обратной совместимости:
+     *    - Позволяет загружать старые состояния в новые версии программы с дополнительными полями
+     *    - Предотвращает исключения при чтении файлов, созданных в более ранних или более поздних версиях
+     * 3. Метод readValue() выполняет всю работу по десериализации:
+     *    - Чтение JSON из файла и парсинг в древовидную структуру
+     *    - Сопоставление полей JSON с полями класса FractalState
+     *    - Создание нового экземпляра FractalState и заполнение всех его полей
+     *    - Рекурсивная обработка вложенных объектов (Viewport, ColorScheme и т.д.)
+     * 
+     * Jackson использует рефлексию и аннотации для определения соответствия 
+     * между JSON-свойствами и полями Java-объекта. Класс FractalState должен иметь:
+     * - Конструктор по умолчанию (без параметров)
+     * - Геттеры и сеттеры для всех сериализуемых полей
+     * 
+     * @param file Файл .frac с сохранённым состоянием
+     * @return Новый объект FractalState с загруженными параметрами
+     * @throws IOException При ошибках ввода-вывода или неверном формате файла
      */
     public FractalState loadFractalState(File file) throws IOException {
         ObjectMapper mapper = new ObjectMapper();

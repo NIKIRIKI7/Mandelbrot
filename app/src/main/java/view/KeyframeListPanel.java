@@ -1,10 +1,9 @@
 // File: app/src/main/java/view/KeyframeListPanel.java
 package view;
 
+import model.FractalState;
 import model.Keyframe;
-import model.FractalState; // Добавлен импорт для formatStateTooltip
-import model.Viewport;   // Добавлен импорт для formatStateTooltip
-
+import model.Viewport;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
@@ -93,7 +92,7 @@ public class KeyframeListPanel extends JPanel {
         JPanel listButtonsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 3, 3)); // Плотнее кнопки
 
         addButton = new JButton("Добавить вид");
-        addButton.setToolTipText("Добавить текущее состояние фрактала из главного окна как новый ключевой кадр");
+        addButton.setToolTipText("Добавить новый кадр (состояние копируется из предыдущего кадра или берется из главного окна, если список пуст)");
         if (addAction != null) addButton.addActionListener(addAction);
 
         removeButton = new JButton("Удалить");

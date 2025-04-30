@@ -1,18 +1,16 @@
 // File: core/src/main/java/services/AnimationService.java
 package services;
 
+import math.FractalFunction;
 import model.ColorScheme;
 import model.FractalState;
 import model.Keyframe;
 import model.Viewport;
-import math.FractalFunction; // Добавлен правильный импорт
 import org.jcodec.api.awt.AWTSequenceEncoder;
-// import org.jcodec.common.io.NIOUtils; // Используется ниже
-import org.jcodec.common.io.SeekableByteChannel; // <-- Добавлен импорт
+import org.jcodec.common.io.SeekableByteChannel;
 import org.jcodec.common.model.Rational;
 import utils.ComplexNumber;
 import utils.CoordinateConverter;
-
 
 import java.awt.*;
 import java.awt.image.BufferedImage;

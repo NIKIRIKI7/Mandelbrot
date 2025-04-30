@@ -7,7 +7,6 @@ import model.Viewport;
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import java.awt.*;
-import java.awt.event.ActionListener;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.Objects;
@@ -15,21 +14,20 @@ import java.util.Objects;
 /**
  * Панель для отображения и ручного редактирования числовых параметров
  * (координаты Viewport, количество итераций) выбранного ключевого кадра.
- * Позволяет применить изменения к предпросмотру или напрямую к выбранному кадру.
+ * Изменения в полях теперь должны обрабатываться внешним слушателем (например, focus lost).
  */
 public class KeyframeParametersPanel extends JPanel {
 
     private final JFormattedTextField minXField, maxXField, minYField, maxYField, iterationsField;
-    private final JButton applyToPreviewButton; // Старая кнопка
-    private final JButton applyToKeyframeButton; // Новая кнопка
+    private Runnable parametersChangeListener; // Слушатель для уведомления об изменениях в полях
 
     /**
      * Создает панель редактирования параметров.
      *
-     * @param applyToPreviewAction Слушатель для кнопки "Применить к предпросмотру".
-     * @param applyToKeyframeAction Слушатель для кнопки "Применить к кадру". // <-- Новый параметр
+     * @param parametersChangeListener Слушатель, который будет уведомлен при изменении значений в полях.
      */
-    public KeyframeParametersPanel(ActionListener applyToPreviewAction, ActionListener applyToKeyframeAction) { // <-- Обновлен конструктор
+    public KeyframeParametersPanel(Runnable parametersChangeListener) {
+        this.parametersChangeListener = parametersChangeListener;
         setLayout(new GridBagLayout());
         setBorder(new TitledBorder("Параметры кадра"));
 
@@ -55,6 +53,13 @@ public class KeyframeParametersPanel extends JPanel {
         maxYField.setPreferredSize(fieldDim);
         iterationsField.setPreferredSize(fieldDim);
 
+        // Добавляем слушателей потери фокуса для уведомления об изменениях
+        addFocusLostListenerToField(minXField);
+        addFocusLostListenerToField(maxXField);
+        addFocusLostListenerToField(minYField);
+        addFocusLostListenerToField(maxYField);
+        addFocusLostListenerToField(iterationsField);
+
         // Размещение компонентов с GridBagLayout
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(3, 5, 3, 5);
@@ -72,57 +77,50 @@ public class KeyframeParametersPanel extends JPanel {
         gbc.gridx = 0; gbc.gridy = 4; add(new JLabel("Итерации:"), gbc);
         gbc.gridx = 1; gbc.gridy = 4; add(iterationsField, gbc);
 
-        // --- Панель для кнопок ---
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 0)); // Горизонтальная панель для кнопок
-
-        // Кнопка "Применить к предпросмотру"
-        applyToPreviewButton = new JButton("К предпросмотру"); // Сокращенное название
-        applyToPreviewButton.setToolTipText("Обновить панель предпросмотра значениями, введенными в этих полях");
-        if (applyToPreviewAction != null) {
-            applyToPreviewButton.addActionListener(applyToPreviewAction);
-        }
-        buttonPanel.add(applyToPreviewButton); // Добавляем на панель кнопок
-
-        // Кнопка "Применить к кадру" <-- Новая кнопка
-        applyToKeyframeButton = new JButton("К кадру"); // Сокращенное название
-        applyToKeyframeButton.setToolTipText("Применить введенные значения напрямую к выделенному ключевому кадру в списке");
-        if (applyToKeyframeAction != null) {
-            applyToKeyframeButton.addActionListener(applyToKeyframeAction);
-        }
-        buttonPanel.add(applyToKeyframeButton); // Добавляем на панель кнопок
-
-        // Добавляем панель кнопок под полями
-        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2; // Растягиваем на 2 колонки
-        gbc.anchor = GridBagConstraints.CENTER; // Центрируем панель кнопок
-        gbc.fill = GridBagConstraints.HORIZONTAL; // Растягиваем панель кнопок
-        gbc.insets = new Insets(10, 5, 5, 5); // Увеличиваем верхний отступ
-        add(buttonPanel, gbc);
-
-        // Изначально поля и кнопки неактивны
+        // Изначально поля неактивны
         setFieldsEnabled(false);
     }
 
     /**
+     * Добавляет слушателя потери фокуса к полю, который вызывает parametersChangeListener.
+     */
+    private void addFocusLostListenerToField(JFormattedTextField field) {
+        field.addPropertyChangeListener("value", evt -> {
+            // Проверяем, активно ли поле, чтобы избежать срабатывания при программном изменении
+            if (field.isEditable() && parametersChangeListener != null) {
+                parametersChangeListener.run();
+            }
+        });
+    }
+
+    /**
      * Обновляет значения в полях ввода на основе данных из {@link FractalState}.
+     * Не вызывает слушателя изменений.
      *
      * @param state Состояние фрактала, параметры которого нужно отобразить.
      *              Если null, поля будут очищены.
      */
     public void updateFields(FractalState state) {
-        if (state == null) {
-            clearFields();
-            setFieldsEnabled(false); // Делаем неактивными при очистке
-            return;
+        // Временно удаляем слушателя, чтобы программное обновление не триггерило событие
+        Runnable originalListener = this.parametersChangeListener;
+        this.parametersChangeListener = null;
+        try {
+            if (state == null) {
+                clearFields();
+                setFieldsEnabled(false); // Делаем неактивными при очистке
+                return;
+            }
+            Viewport vp = state.getViewport();
+            minXField.setValue(vp.getMinX());
+            maxXField.setValue(vp.getMaxX());
+            minYField.setValue(vp.getMinY());
+            maxYField.setValue(vp.getMaxY());
+            iterationsField.setValue(state.getMaxIterations());
+            setFieldsEnabled(true);
+        } finally {
+            // Возвращаем слушателя обратно
+            this.parametersChangeListener = originalListener;
         }
-        Viewport vp = state.getViewport();
-        // Устанавливаем значения, не вызывая события редактирования
-        minXField.setValue(vp.getMinX());
-        maxXField.setValue(vp.getMaxX());
-        minYField.setValue(vp.getMinY());
-        maxYField.setValue(vp.getMaxY());
-        iterationsField.setValue(state.getMaxIterations());
-        // Делаем поля и кнопки активными, так как есть данные
-        setFieldsEnabled(true);
     }
 
     /**
@@ -137,11 +135,10 @@ public class KeyframeParametersPanel extends JPanel {
     }
 
     /**
-     * Устанавливает состояние редактируемости для всех полей ввода и
-     * состояние активности для кнопок "Применить".
+     * Устанавливает состояние редактируемости для всех полей ввода.
      *
-     * @param enabled {@code true}, чтобы разрешить редактирование и активировать кнопки,
-     *                {@code false} - чтобы запретить и деактивировать.
+     * @param enabled {@code true}, чтобы разрешить редактирование,
+     *                {@code false} - чтобы запретить.
      */
     public void setFieldsEnabled(boolean enabled) {
         // Управляем редактируемостью и enabled состоянием полей
@@ -156,16 +153,11 @@ public class KeyframeParametersPanel extends JPanel {
         maxYField.setEnabled(enabled);
         iterationsField.setEnabled(enabled);
 
-        // Управляем активностью кнопок
-        applyToPreviewButton.setEnabled(enabled);
-        applyToKeyframeButton.setEnabled(enabled); // <-- Управляем новой кнопкой
-
         // Метки тоже делаем серыми при выключении
         for (Component comp : getComponents()) {
             if (comp instanceof JLabel) {
                 comp.setEnabled(enabled);
             }
-            // Панель с кнопками не трогаем, только сами кнопки
         }
     }
 
@@ -213,28 +205,30 @@ public class KeyframeParametersPanel extends JPanel {
     }
 
     /**
-     * Вспомогательный метод для принудительного завершения редактирования поля.
-     * @param field Поле для коммита.
-     * @param fieldName Имя поля для сообщения об ошибке.
-     * @throws ParseException если значение поля невалидно.
+     * Принудительно вызывает commitEdit для поля, если оно редактируется.
+     * Выбрасывает ParseException с указанием имени поля при ошибке.
      */
     private void commitEditIfValid(JFormattedTextField field, String fieldName) throws ParseException {
-        if (!field.isEditValid()) {
-            // Попытка получить текст для более информативной ошибки
-            String textValue = field.getText();
-            throw new ParseException("Некорректное значение '" + textValue + "' в поле '" + fieldName + "'", 0);
+        if (field.isEditValid()) {
+            try {
+                field.commitEdit();
+            } catch (ParseException e) {
+                throw new ParseException("Некорректное значение в поле '" + fieldName + "': " + e.getMessage(), e.getErrorOffset());
+            }
+        } else {
+            // Это может произойти, если значение было введено, но фокус не терялся
+            // и значение не валидно для формата.
+            // Можно попробовать получить текст и парсить вручную, но commitEdit должен был это сделать.
+            // Пока считаем это ошибкой формата.
+            throw new ParseException("Некорректный формат значения в поле '" + fieldName + "'.", 0);
         }
-        field.commitEdit(); // Применяет введенное значение
     }
 
     /**
-     * Переопределяем setEnabled для блокировки всех интерактивных компонентов панели.
-     * @param enabled {@code true} для включения, {@code false} для выключения.
+     * Устанавливает слушателя, который будет вызываться при изменении значения в любом поле.
+     * @param listener Слушатель
      */
-    @Override
-    public void setEnabled(boolean enabled) {
-        super.setEnabled(enabled);
-        // Вызываем наш же метод, который управляет полями и кнопками
-        setFieldsEnabled(enabled);
+    public void setParametersChangeListener(Runnable listener) {
+        this.parametersChangeListener = listener;
     }
 }

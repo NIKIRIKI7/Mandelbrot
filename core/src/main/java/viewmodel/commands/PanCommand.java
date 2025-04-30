@@ -4,6 +4,7 @@ package viewmodel.commands;
 import model.FractalState;
 import model.Viewport;
 import viewmodel.FractalViewModel;
+
 import java.util.Objects;
 
 /**

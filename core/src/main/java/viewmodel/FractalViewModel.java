@@ -1,21 +1,25 @@
 // File: core/src/main/java/viewmodel/FractalViewModel.java
 package viewmodel;
 
-import model.ColorScheme;
-import model.FractalState;
-import utils.ComplexNumber;
-import utils.CoordinateConverter;
-import render.FractalRenderer;
-import viewmodel.commands.Command;
-import viewmodel.commands.PanCommand;
-import viewmodel.commands.ZoomCommand;
-import viewmodel.commands.UndoManager;
 import iteration.IterationStrategy;
 import iteration.LogarithmicIterationStrategy;
+import model.ColorScheme;
+import model.FractalState;
+import model.Viewport;
+import render.FractalRenderer;
+import utils.ComplexNumber;
+import utils.CoordinateConverter;
+import viewmodel.commands.Command;
+import viewmodel.commands.PanCommand;
+import viewmodel.commands.UndoManager;
+import viewmodel.commands.ZoomCommand;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * ViewModel (согласно паттерну MVVM) для управления состоянием и логикой
@@ -57,6 +61,10 @@ public class FractalViewModel {
      * Значение события: {@code (oldCanUndo, newCanUndo)} (тип Boolean).
      */
     public static final String PROPERTY_CAN_UNDO = "canUndo";
+    /**
+     * Имя свойства для события изменения Viewport (для PropertyChangeSupport, если потребуется).
+     */
+    public static final String PROPERTY_VIEWPORT = "viewport";
 
     /** Текущее неизменяемое состояние фрактала. */
     private FractalState currentState;
@@ -68,8 +76,10 @@ public class FractalViewModel {
 
 
     /** Стратегия расчёта итераций при изменении масштаба (Pattern: Strategy) */
-    private final IterationStrategy iterationStrategy;
+    private IterationStrategy iterationStrategy;
 
+    /** Список слушателей, заинтересованных только в изменении Viewport. */
+    private final List<Consumer<Viewport>> viewportChangeListeners = new ArrayList<>();
 
     /**
      * Создает ViewModel с начальным состоянием фрактала по умолчанию
@@ -152,6 +162,9 @@ public class FractalViewModel {
             undoManager.clearHistory(); // Очистка истории для загруженного состояния
 
             support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+            // Уведомляем и специфических слушателей Viewport
+            notifyViewportListeners(this.currentState.getViewport());
+
             // После очистки истории canUndo точно станет false
             boolean newCanUndo = false; // undoManager.canUndo() вернет false
             if (oldCanUndo != newCanUndo) { // Уведомляем, только если изменилось
@@ -420,8 +433,51 @@ public class FractalViewModel {
      * @param newState Новое состояние {@link FractalState} для установки. Не должно быть null.
      */
     public void updateStateFromCommand(FractalState newState) {
-        Objects.requireNonNull(newState, "Новое состояние от команды не может быть null");
-        this.currentState = newState;
-        // PropertyChange event НЕ генерируется здесь, а в вызывающем методе (executeCommand/undoLastAction)
+        Objects.requireNonNull(newState, "Состояние от команды не может быть null");
+        FractalState oldState = this.currentState;
+        this.currentState = newState; // Обновляем состояние
+
+        // Уведомляем слушателей об изменении основного состояния
+        support.firePropertyChange(PROPERTY_STATE, oldState, this.currentState);
+
+        // Если Viewport изменился, уведомляем специфических слушателей
+        if (!Objects.equals(oldState.getViewport(), newState.getViewport())) {
+            notifyViewportListeners(newState.getViewport());
+        }
+    }
+
+    /**
+     * Добавляет слушателя, который будет уведомлен только при изменении Viewport.
+     * @param listener Слушатель {@code Consumer<Viewport>}.
+     */
+    public synchronized void addViewportChangeListener(Consumer<Viewport> listener) {
+        if (listener != null && !viewportChangeListeners.contains(listener)) {
+            viewportChangeListeners.add(listener);
+        }
+    }
+
+    /**
+     * Удаляет слушателя изменений Viewport.
+     * @param listener Слушатель для удаления.
+     */
+    public synchronized void removeViewportChangeListener(Consumer<Viewport> listener) {
+        viewportChangeListeners.remove(listener);
+    }
+
+    /**
+     * Уведомляет всех зарегистрированных слушателей Viewport об изменении.
+     * @param newViewport Новый {@link Viewport}.
+     */
+    private synchronized void notifyViewportListeners(Viewport newViewport) {
+        // Копируем список перед итерацией для безопасности (ConcurrentModificationException)
+        List<Consumer<Viewport>> listeners = new ArrayList<>(viewportChangeListeners);
+        for (Consumer<Viewport> listener : listeners) {
+            try {
+                listener.accept(newViewport);
+            } catch (Exception e) {
+                System.err.println("Ошибка при уведомлении слушателя Viewport: " + e.getMessage());
+                e.printStackTrace(); // Логируем ошибку
+            }
+        }
     }
 }

@@ -1,14 +1,13 @@
 // File: app/src/main/java/view/AnimationSetupDialog.java
 package view;
 
+import math.FractalFunction;
 import model.ColorScheme;
 import model.FractalState;
 import model.Keyframe;
 import model.Viewport;
 import services.AnimationService;
 import viewmodel.FractalViewModel;
-import math.FractalFunction;
-
 
 import javax.swing.*;
 import java.awt.*;
@@ -16,12 +15,12 @@ import java.awt.event.ActionEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
-import java.text.ParseException;
-import java.util.concurrent.CancellationException; // Добавлен импорт
 
 /**
  * Диалоговое окно для настройки параметров анимации фрактала.
@@ -84,8 +83,7 @@ public class AnimationSetupDialog extends JDialog {
                 "Шаг 1: Добавьте ключевые кадры анимации"));
 
         keyframePreviewPanel = new KeyframePreviewPanel(
-                this::loadSelectedToPreview,
-                this::updateSelectedKeyframeFromPreview
+                this::handlePreviewViewportChange
         );
         // Улучшаем заголовок для большей понятности
         keyframePreviewPanel.setBorder(BorderFactory.createTitledBorder(
@@ -93,8 +91,7 @@ public class AnimationSetupDialog extends JDialog {
                 "Шаг 2: Просмотр и редактирование кадра"));
 
         keyframeParametersPanel = new KeyframeParametersPanel(
-                this::applyFieldsToPreview,
-                this::applyFieldsToSelectedKeyframe
+                this::handleParameterChangeFromFields // Передаем новый обработчик
         );
         // Улучшаем заголовок для большей понятности
         keyframeParametersPanel.setBorder(BorderFactory.createTitledBorder(
@@ -172,6 +169,7 @@ public class AnimationSetupDialog extends JDialog {
         // Добавляем кнопку-переключатель для показа/скрытия панели подсказок
         JToggleButton toggleHelpButton = new JToggleButton("Скрыть подсказки");
         toggleHelpButton.setSelected(true);
+        toggleHelpButton.setToolTipText("Показать или скрыть панель с инструкциями по созданию анимации");
         toggleHelpButton.addActionListener(e -> {
             helpLabel.setVisible(toggleHelpButton.isSelected());
             toggleHelpButton.setText(toggleHelpButton.isSelected() ? "Скрыть подсказки" : "Показать подсказки");
@@ -214,7 +212,6 @@ public class AnimationSetupDialog extends JDialog {
 
     private void handleListSelectionChange(int selectedIndex) {
         boolean selected = (selectedIndex != -1);
-        keyframePreviewPanel.setControlButtonsEnabled(selected);
         keyframeParametersPanel.setFieldsEnabled(selected);
         // Кнопки Up/Down/Remove обновляются внутри KeyframeListPanel
 
@@ -254,19 +251,56 @@ public class AnimationSetupDialog extends JDialog {
         keyframeParametersPanel.updateFields(state);
     }
 
+    /**
+     * Добавляет новый ключевой кадр в список.
+     * Если список пуст, состояние берется из основного окна.
+     * Если в списке уже есть кадры, новый кадр копирует состояние последнего кадра.
+     */
     private void addCurrentViewAsKeyframe(ActionEvent e) {
-        FractalState currentState = mainViewModel.getCurrentState();
-        if (currentState != null) {
-            Keyframe newKeyframe = new Keyframe(currentState);
-            keyframeListModel.addElement(newKeyframe);
-            int newIndex = keyframeListModel.getSize() - 1;
-            keyframeListPanel.setSelectedIndex(newIndex);
-            keyframeListPanel.ensureIndexIsVisible(newIndex);
+        FractalState stateForNewKeyframe;
+
+        if (keyframeListModel.isEmpty()) {
+            // Список пуст, берем состояние из основного окна
+            stateForNewKeyframe = mainViewModel.getCurrentState();
+            if (stateForNewKeyframe == null) {
+                showError("Не удалось получить текущее состояние фрактала из главного окна.");
+                return; // Не можем добавить кадр без состояния
+            }
         } else {
-            showError("Не удалось получить текущее состояние фрактала из главного окна.");
+            // Список не пуст, берем состояние последнего кадра
+            try {
+                Keyframe lastKeyframe = keyframeListModel.getElementAt(keyframeListModel.getSize() - 1);
+                stateForNewKeyframe = lastKeyframe.getState();
+                // Проверка на null, хотя getState не должен возвращать null по контракту Keyframe
+                if (stateForNewKeyframe == null) {
+                     showError("Ошибка: состояние последнего кадра некорректно.");
+                     // В качестве запасного варианта можно взять дефолтное состояние
+                     // stateForNewKeyframe = FractalState.createDefault();
+                     // Или просто не добавлять кадр
+                     return;
+                }
+            } catch (ArrayIndexOutOfBoundsException ex) {
+                // Очень редкая ситуация, если список изменился между isEmpty и getElementAt
+                showError("Внутренняя ошибка при получении последнего кадра.");
+                return;
+            }
         }
+
+        // Создаем и добавляем новый кадр
+        Keyframe newKeyframe = new Keyframe(stateForNewKeyframe);
+        keyframeListModel.addElement(newKeyframe);
+        int newIndex = keyframeListModel.getSize() - 1;
+        keyframeListPanel.setSelectedIndex(newIndex); // Выделяем добавленный кадр
+        keyframeListPanel.ensureIndexIsVisible(newIndex); // Прокручиваем к нему
+        generationControlPanel.setStatus("Добавлен новый кадр: " + newKeyframe.getName());
+
+        // Загружаем состояние нового кадра в панели редактирования
+        loadStateToPreviewAndFields(stateForNewKeyframe);
     }
 
+    /**
+     * Удаляет выбранный ключевой кадр из списка.
+     */
     private void removeSelectedKeyframe(ActionEvent e) {
         int selectedIndex = keyframeListPanel.getSelectedIndex();
         if (selectedIndex != -1) {
@@ -283,60 +317,18 @@ public class AnimationSetupDialog extends JDialog {
         }
     }
 
-    private void loadSelectedToPreview(ActionEvent e) {
-        int selectedIndex = keyframeListPanel.getSelectedIndex();
-        if (selectedIndex != -1) {
-            try {
-                Keyframe selectedKeyframe = keyframeListModel.getElementAt(selectedIndex);
-                if (selectedKeyframe != null && selectedKeyframe.getState() != null) {
-                    loadStateToPreviewAndFields(selectedKeyframe.getState());
-                    generationControlPanel.setStatus("Состояние кадра '" + selectedKeyframe.getName() + "' загружено в предпросмотр.");
-                } else {
-                    showError("Выбранный кадр содержит некорректные данные.");
-                    generationControlPanel.setStatus("Ошибка: Некорректный выбранный кадр.");
-                }
-            } catch (ArrayIndexOutOfBoundsException ex) {
-                showError("Ошибка: Выбранный кадр больше не доступен.");
-                keyframeListPanel.clearSelection(); // Сбрасываем выбор
-            }
-        } else {
-            showWarning("Сначала выберите кадр для загрузки в предпросмотр.");
-        }
-    }
-
-    /** Обновляет выбранный кадр состоянием из предпросмотра. */
-    private void updateSelectedKeyframeFromPreview(ActionEvent e) {
-        int selectedIndex = keyframeListPanel.getSelectedIndex();
-        if (selectedIndex != -1) {
-            try {
-                FractalState previewState = keyframePreviewPanel.getCurrentState();
-                if (previewState != null) {
-                    // Создаем новый кадр с актуальным именем, сгенерированным из данных Viewport
-                    Keyframe updatedKeyframe = new Keyframe(previewState);
-                    keyframeListModel.set(selectedIndex, updatedKeyframe);
-                    keyframeParametersPanel.updateFields(previewState);
-                    // Обновляем отображение списка, чтобы информация о кадре обновилась
-                    keyframeListPanel.refreshList();
-                    generationControlPanel.setStatus("Кадр обновлен из предпросмотра.");
-                } else {
-                    showError("Не удалось получить состояние из панели предпросмотра.");
-                }
-            } catch (ArrayIndexOutOfBoundsException ex) {
-                showError("Ошибка: Выбранный кадр больше не доступен для обновления.");
-                keyframeListPanel.clearSelection(); // Сбрасываем выбор
-            }
-        } else {
-            showWarning("Сначала выберите кадр для обновления.");
-        }
-    }
-
-    /** Применяет значения из полей параметров к предпросмотру. */
-    private void applyFieldsToPreview(ActionEvent e) {
+    /**
+     * Обработчик, вызываемый при изменении значения в любом поле KeyframeParametersPanel.
+     * Обновляет предпросмотр в соответствии с введенными значениями.
+     * Не изменяет сам ключевой кадр, только предпросмотр.
+     */
+    private void handleParameterChangeFromFields() {
         try {
             Object[] params = keyframeParametersPanel.getValidatedParameters();
             Viewport newViewport = (Viewport) params[0];
             int newIterations = (Integer) params[1];
 
+            // Получаем текущие схему и функцию из предпросмотра, чтобы не сбрасывать их
             FractalState currentStateInPreview = keyframePreviewPanel.getCurrentState();
             ColorScheme scheme = (currentStateInPreview != null)
                     ? currentStateInPreview.getColorScheme()
@@ -345,70 +337,43 @@ public class AnimationSetupDialog extends JDialog {
                     ? currentStateInPreview.getFractalFunction()
                     : FractalState.createDefault().getFractalFunction();
 
-            FractalState newState = new FractalState(newViewport, newIterations, scheme, function);
-            keyframePreviewPanel.loadState(newState);
-            generationControlPanel.setStatus("Параметры из полей применены к предпросмотру.");
+            // Создаем новое состояние только с измененным viewport и итерациями
+            FractalState newStateForPreview = new FractalState(newViewport, newIterations, scheme, function);
+
+            // Загружаем новое состояние в панель предпросмотра
+            // Важно: это не меняет сам выбранный Keyframe в списке!
+            keyframePreviewPanel.loadState(newStateForPreview);
+            generationControlPanel.setStatus("Предпросмотр обновлен по значениям из полей.");
 
         } catch (ParseException | IllegalArgumentException | NullPointerException ex) {
-            showError("Ошибка ввода параметров: " + ex.getMessage());
+            // Ошибку парсинга/валидации должен был показать сам KeyframeParametersPanel
+            // Здесь можно просто обновить статус
+            generationControlPanel.setStatus("Ошибка ввода в полях параметров.");
+            // Можно добавить showWarning, если нужно более явное уведомление
+            // showWarning("Некорректное значение в одном из полей параметров.");
         }
     }
 
-    /** Применяет значения из полей параметров напрямую к выбранному ключевому кадру. */
-    private void applyFieldsToSelectedKeyframe(ActionEvent e) {
-        int selectedIndex = keyframeListPanel.getSelectedIndex();
-        if (selectedIndex == -1) {
-            showWarning("Сначала выберите кадр в списке, к которому нужно применить параметры.");
-            return;
-        }
+    /**
+     * Обрабатывает изменение Viewport в панели предпросмотра.
+     * Обновляет состояние выбранного ключевого кадра в реальном времени.
+     */
+    private void handlePreviewViewportChange(Viewport newViewport) {
+        if (keyframeListPanel.getSelectedIndex() != -1) {
+            try {
+                Keyframe selectedKeyframe = keyframeListModel.getElementAt(keyframeListPanel.getSelectedIndex());
 
-        try {
-            // 1. Получаем параметры из полей
-            Object[] params = keyframeParametersPanel.getValidatedParameters();
-            Viewport newViewport = (Viewport) params[0];
-            int newIterations = (Integer) params[1];
-
-            // 2. Получаем текущий выбранный кадр (может быть IndexOutOfBounds)
-            Keyframe selectedKeyframe = keyframeListModel.getElementAt(selectedIndex);
-            FractalState currentKeyState = selectedKeyframe.getState();
-
-            // Проверка на null для безопасности
-            if (currentKeyState == null || currentKeyState.getColorScheme() == null || currentKeyState.getFractalFunction() == null) {
-                showError("Ошибка: Состояние выбранного кадра некорректно.");
-                return;
+                FractalState updatedState = selectedKeyframe.getState().withViewport(newViewport);
+                keyframeParametersPanel.updateFields(updatedState);
+                selectedKeyframe = new Keyframe(updatedState);
+                keyframeListModel.set(keyframeListPanel.getSelectedIndex(), selectedKeyframe);
+                keyframeListPanel.refreshList();
+            } catch (ArrayIndexOutOfBoundsException ex) {
+                showError("Ошибка: Выбранный кадр больше не доступен для обновления.");
+                keyframeListPanel.clearSelection(); // Сбрасываем выбор
             }
-
-            // 3. Создаем новое состояние
-            FractalState newStateForKeyframe = new FractalState(
-                    newViewport,
-                    newIterations,
-                    currentKeyState.getColorScheme(), // Схема из кадра
-                    currentKeyState.getFractalFunction() // Функция из кадра
-            );
-
-            // 4. Создаем новый объект Keyframe, чтобы генерировалось новое имя на основе Viewport
-            Keyframe updatedKeyframe = new Keyframe(newStateForKeyframe);
-
-            // 5. Заменяем старый кадр на новый в модели списка
-            keyframeListModel.set(selectedIndex, updatedKeyframe);
-            
-            // Обновляем отображение списка, чтобы имя обновилось
-            keyframeListPanel.refreshList();
-
-            // 6. Обновляем UI
-            generationControlPanel.setStatus("Параметры применены к кадру.");
-            // Поля параметров уже показывают введенные значения.
-            // Предпросмотр не меняем, так как применили напрямую к кадру.
-
-        } catch (ParseException | IllegalArgumentException | NullPointerException ex) {
-            showError("Ошибка ввода параметров: " + ex.getMessage());
-        } catch (ArrayIndexOutOfBoundsException ex) {
-            // Это может произойти, если selectedIndex стал невалидным между проверкой и использованием
-            showError("Ошибка: Выбранный кадр больше не доступен.");
-            keyframeListPanel.clearSelection(); // <-- Исправлено: вызываем метод у KeyframeListPanel
         }
     }
-
 
     private void startOrCancelAnimationGeneration(ActionEvent e) {
         if (animationWorker != null && !animationWorker.isDone()) {
@@ -568,7 +533,6 @@ public class AnimationSetupDialog extends JDialog {
         // При включении восстанавливаем состояние кнопок в зависимости от выбора
         if (enabled) {
             int selectedIndex = keyframeListPanel.getSelectedIndex();
-            keyframePreviewPanel.setControlButtonsEnabled(selectedIndex != -1);
             keyframeParametersPanel.setFieldsEnabled(selectedIndex != -1);
             // Состояние кнопок Вверх/Вниз управляется внутри KeyframeListPanel
             keyframeListPanel.updateButtonStates();
@@ -609,7 +573,6 @@ public class AnimationSetupDialog extends JDialog {
         generationControlPanel.setProgress(0);
         generationControlPanel.setGenerateButtonText("Генерировать видео...");
         generationControlPanel.setGenerateButtonEnabled(true);
-        keyframePreviewPanel.setControlButtonsEnabled(false);
         keyframeParametersPanel.setFieldsEnabled(false);
         keyframeParametersPanel.clearFields();
         keyframeListModel.clear();

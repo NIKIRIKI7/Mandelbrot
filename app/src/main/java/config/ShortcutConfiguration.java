@@ -1,10 +1,10 @@
 package config;
 
+import services.FileService;
 import shortcuts.AppCommand;
 import shortcuts.KeyboardShortcutManager;
-import services.FileService;
-import viewmodel.FractalViewModel;
 import view.MainFrame;
+import viewmodel.FractalViewModel;
 
 import javax.swing.*;
 import java.awt.event.WindowEvent;

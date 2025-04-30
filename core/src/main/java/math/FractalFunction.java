@@ -1,11 +1,11 @@
 // File: core/src/main/java/math/FractalFunction.java
 package math;
 
-import utils.ComplexNumber;
-import java.io.Serializable;
-
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import utils.ComplexNumber;
+
+import java.io.Serializable;
 
 /**
  * Функциональный интерфейс, представляющий собой стратегию вычисления
