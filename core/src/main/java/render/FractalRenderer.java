@@ -5,7 +5,7 @@ import model.ColorScheme;
 import model.FractalState;
 import model.Viewport;
 import utils.ComplexNumber;
-import utils.CoordinateConverter;
+import utils.Converter;
 
 import javax.swing.*;
 import java.awt.*;
@@ -24,7 +24,7 @@ import java.util.function.Consumer;
  * 
  * 1. Принцип тайлинга (разделения на плитки):
  *    - Большое изображение разбивается на маленькие прямоугольные участки (тайлы) размером TILE_SIZE x TILE_SIZE пикселей
- *    - Каждый тайл обрабатывается отдельным потоком, что позволяет распараллелить вычисления
+ *    - Каждый тайл обрабатывается отдельным потоком, что позволяет распараллелить вычисления (то есть мы одну большую проблему делим на множество маленьких проблем для одновременного вычисления)
  *    - TILE_SIZE (32x32) выбран как компромисс между эффективностью распараллеливания и накладными расходами на создание задач
  *      (слишком маленькие тайлы = больше накладных расходов, слишком большие = менее эффективное использование ядер)
  * 
@@ -252,7 +252,6 @@ public class FractalRenderer {
 
                         Future<?> future = executor.submit(() -> {
                             if (Thread.currentThread().isInterrupted() || cancelled) {
-                                //System.out.println("Рендеринг тайла пропущен из-за отмены/прерывания");
                                 return; // Не рендерим, если отменили или прервали
                             }
                             renderTile(tile, state, width, height, image);
@@ -394,7 +393,7 @@ public class FractalRenderer {
                     int globalX = tile.startX + localX;
                     
                     // Преобразуем координаты экрана в комплексные
-                    ComplexNumber pointCoords = CoordinateConverter.screenToComplex(
+                    ComplexNumber pointCoords = Converter.screenToComplex(
                             globalX, globalY, imageWidth, imageHeight, viewport);
                     if (pointCoords == null) continue;
 

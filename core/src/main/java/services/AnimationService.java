@@ -10,7 +10,7 @@ import org.jcodec.api.awt.AWTSequenceEncoder;
 import org.jcodec.common.io.SeekableByteChannel;
 import org.jcodec.common.model.Rational;
 import utils.ComplexNumber;
-import utils.CoordinateConverter;
+import utils.Converter;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -317,7 +317,7 @@ public class AnimationService {
             if (Thread.currentThread().isInterrupted()) throw new InterruptedException("Рендеринг тайла прерван.");
 
             for (int x = tile.getStartX(); x < tile.getStartX() + tile.getWidth(); ++x) {
-                ComplexNumber pointCoords = CoordinateConverter.screenToComplex(x, y, imageWidth, imageHeight, viewport);
+                ComplexNumber pointCoords = Converter.screenToComplex(x, y, imageWidth, imageHeight, viewport);
                 if (pointCoords == null) continue;
 
                 int iterations = fractalFunction.calculateIterations(pointCoords, pointCoords, maxIterations);

@@ -21,10 +21,10 @@ import java.awt.geom.Point2D;
  * собственную реализацию.
  * </p>
  */
-public final class CoordinateConverter { // final, т.к. утилитарный класс со статическими методами
+public final class Converter { // final, т.к. утилитарный класс со статическими методами
 
     // Приватный конструктор, чтобы предотвратить создание экземпляров утилитарного класса
-    private CoordinateConverter() {
+    private Converter() {
         throw new UnsupportedOperationException("Это утилитарный класс, его не нужно инстанциировать");
     }
 

@@ -8,7 +8,7 @@ import model.FractalState;
 import model.Viewport;
 import render.FractalRenderer;
 import utils.ComplexNumber;
-import utils.CoordinateConverter;
+import utils.Converter;
 import viewmodel.commands.Command;
 import viewmodel.commands.PanCommand;
 import viewmodel.commands.UndoManager;
@@ -32,7 +32,7 @@ import java.util.function.Consumer;
  *         используя паттерн Команда ({@link Command}) для поддержки отмены действий (Undo).</li>
  *     <li>Управляет историей команд через {@link UndoManager}.</li>
  *     <li>Уведомляет подписчиков (обычно View) об изменениях состояния через {@link PropertyChangeSupport}.</li>
- *     <li>Взаимодействует с {@link CoordinateConverter} для преобразования экранных координат в комплексные.</li>
+ *     <li>Взаимодействует с {@link Converter} для преобразования экранных координат в комплексные.</li>
  * </ul>
  * </p><p>
  * Не занимается непосредственно рендерингом (это задача {@link FractalRenderer}, который обычно
@@ -245,8 +245,8 @@ public class FractalViewModel {
         }
 
         // Конвертируем экранные координаты углов в комплексные числа
-        ComplexNumber c1 = CoordinateConverter.screenToComplex(startX, startY, panelWidth, panelHeight, currentState.getViewport());
-        ComplexNumber c2 = CoordinateConverter.screenToComplex(endX, endY, panelWidth, panelHeight, currentState.getViewport());
+        ComplexNumber c1 = Converter.screenToComplex(startX, startY, panelWidth, panelHeight, currentState.getViewport());
+        ComplexNumber c2 = Converter.screenToComplex(endX, endY, panelWidth, panelHeight, currentState.getViewport());
 
         if (c1 == null || c2 == null) {
             System.err.println("Не удалось сконвертировать экранные координаты для зума.");

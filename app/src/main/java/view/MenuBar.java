@@ -1,4 +1,3 @@
-// File: app/src/main/java/view/MenuBar.java
 package view;
 
 import model.ColorScheme;
@@ -7,12 +6,13 @@ import model.GrayscaleScheme;
 import model.NonlinearRGBScheme;
 import services.AnimationService;
 import services.FileService;
+import shortcuts.CommandFactory;
 import shortcuts.KeyboardShortcutManager;
+// Импорт ViewModel для управления состоянием приложения
 import viewmodel.FractalViewModel;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
-import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -25,7 +25,8 @@ import java.util.List;
  */
 public class MenuBar extends JMenuBar {
 
-    private final FractalViewModel viewModel;
+    // ViewModel для управления состоянием приложения и взаимодействия с UI
+private final FractalViewModel viewModel;
     private final FileService fileService;
     private final FractalPanel fractalPanel;
     private final StatusBar statusBar;
@@ -50,6 +51,9 @@ public class MenuBar extends JMenuBar {
         this.fractalPanel = fractalPanel;
         this.statusBar = statusBar;
         this.animationService = new AnimationService(); // Инициализация здесь
+        
+        // Инициализация и регистрация стандартных команд
+        CommandFactory.getInstance().registerStandardCommands(viewModel, fileService, this);
 
         createFileMenu();
         createEditMenu();
@@ -84,107 +88,31 @@ public class MenuBar extends JMenuBar {
     private void createFileMenu() {
         JMenu fileMenu = new JMenu("Файл");
         fileMenu.setMnemonic(KeyEvent.VK_F);
-
-        // Настраиваем команды для пунктов меню
-        JMenuItem loadItem = new JMenuItem();
-        KeyboardShortcutManager.getInstance().registerShortcut(
-            KeyboardShortcutManager.SHORTCUT_OPEN, 
-            createLoadCommand());
-        KeyboardShortcutManager.getInstance().bindMenuItemToShortcut(
-            loadItem, KeyboardShortcutManager.SHORTCUT_OPEN);
-        fileMenu.add(loadItem);
-
-        JMenuItem saveItem = new JMenuItem();
-        KeyboardShortcutManager.getInstance().registerShortcut(
-            KeyboardShortcutManager.SHORTCUT_SAVE, 
-            createSaveCommand());
-        KeyboardShortcutManager.getInstance().bindMenuItemToShortcut(
-            saveItem, KeyboardShortcutManager.SHORTCUT_SAVE);
-        fileMenu.add(saveItem);
-
+        
+        // Используем KeyboardShortcutManager для создания пунктов меню
+        KeyboardShortcutManager shortcutManager = KeyboardShortcutManager.getInstance();
+        
+        // Пункт меню Открыть
+        JMenuItem loadItem = shortcutManager.createMenuItem(KeyboardShortcutManager.SHORTCUT_OPEN);
+        if (loadItem != null) fileMenu.add(loadItem);
+        
+        // Пункт меню Сохранить
+        JMenuItem saveItem = shortcutManager.createMenuItem(KeyboardShortcutManager.SHORTCUT_SAVE);
+        if (saveItem != null) fileMenu.add(saveItem);
+        
         fileMenu.addSeparator();
-
-        JMenuItem exitItem = new JMenuItem();
-        KeyboardShortcutManager.getInstance().registerShortcut(
-            KeyboardShortcutManager.SHORTCUT_EXIT, 
-            createExitCommand());
-        KeyboardShortcutManager.getInstance().bindMenuItemToShortcut(
-            exitItem, KeyboardShortcutManager.SHORTCUT_EXIT);
-        fileMenu.add(exitItem);
-
+        
+        // Пункт меню Выход
+        JMenuItem exitItem = shortcutManager.createMenuItem(KeyboardShortcutManager.SHORTCUT_EXIT);
+        if (exitItem != null) fileMenu.add(exitItem);
+        
         add(fileMenu);
     }
     
     /**
-     * Создает команду загрузки файла.
+     * Сохраняет фрактал, используя диалог выбора файла.
      */
-    private shortcuts.AppCommand createLoadCommand() {
-        return new shortcuts.AppCommand() {
-            @Override
-            public String getName() {
-                return "Загрузить состояние...";
-            }
-            
-            @Override
-            public void execute() {
-                loadFractal();
-            }
-            
-            @Override
-            public boolean isEnabled() {
-                return true;
-            }
-        };
-    }
-    
-    /**
-     * Создает команду сохранения файла (паттерн Command).
-     */
-    private shortcuts.AppCommand createSaveCommand() {
-        return new shortcuts.AppCommand() {
-            @Override
-            public String getName() {
-                return "Сохранить...";
-            }
-            
-            @Override
-            public void execute() {
-                saveUsingFileChooser();
-            }
-            
-            @Override
-            public boolean isEnabled() {
-                return true;
-            }
-        };
-    }
-    
-    /**
-     * Создает команду выхода из приложения (паттерн Command).
-     */
-    private shortcuts.AppCommand createExitCommand() {
-        return new shortcuts.AppCommand() {
-            @Override
-            public String getName() {
-                return "Выход";
-            }
-            
-            @Override
-            public void execute() {
-                Window window = SwingUtilities.getWindowAncestor(MenuBar.this);
-                if (window != null) {
-                    window.dispatchEvent(new java.awt.event.WindowEvent(window, java.awt.event.WindowEvent.WINDOW_CLOSING));
-                }
-            }
-            
-            @Override
-            public boolean isEnabled() {
-                return true;
-            }
-        };
-    }
-
-    private void saveUsingFileChooser() {
+    public void saveUsingFileChooser() {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Сохранить файл");
 
@@ -257,16 +185,14 @@ public class MenuBar extends JMenuBar {
     private void createEditMenu() {
         JMenu editMenu = new JMenu("Правка");
         editMenu.setMnemonic(KeyEvent.VK_E);
-
-        undoMenuItem = new JMenuItem();
-        // Регистрируем команду Undo
-        KeyboardShortcutManager.getInstance().registerShortcut(
-            KeyboardShortcutManager.SHORTCUT_UNDO, 
-            createUndoCommand());
-        KeyboardShortcutManager.getInstance().bindMenuItemToShortcut(
-            undoMenuItem, KeyboardShortcutManager.SHORTCUT_UNDO);
-        editMenu.add(undoMenuItem);
-
+        
+        // Пункт меню Отменить
+        undoMenuItem = KeyboardShortcutManager.getInstance().createMenuItem(
+            KeyboardShortcutManager.SHORTCUT_UNDO);
+        if (undoMenuItem != null) {
+            editMenu.add(undoMenuItem);
+        }
+        
         add(editMenu);
     }
     
@@ -275,33 +201,7 @@ public class MenuBar extends JMenuBar {
      * 
      * Реализует интерфейс AppCommand, который является ключевым компонентом паттерна Command:
      * 1. getName() - возвращает отображаемое название команды для элемента меню
-     * 2. execute() - выполняет саму команду отмены через ViewModel
-     * 3. isEnabled() - определяет, доступна ли команда в данный момент,
-     *    проверяя наличие действий для отмены в UndoManager
-     * 
-     * Эта анонимная реализация AppCommand используется как для пункта меню,
-     * так и для горячей клавиши, что обеспечивает единую логику выполнения
-     * команды отмены независимо от способа её вызова.
      */
-    private shortcuts.AppCommand createUndoCommand() {
-        return new shortcuts.AppCommand() {
-            @Override
-            public String getName() {
-                return "Отменить";
-            }
-            
-            @Override
-            public void execute() {
-                viewModel.undoLastAction();
-            }
-            
-            @Override
-            public boolean isEnabled() {
-                return viewModel.getUndoManager().canUndo();
-            }
-        };
-    }
-
     private void createViewMenu() {
         JMenu viewMenu = new JMenu("Вид"); // Локализация
         viewMenu.setMnemonic(KeyEvent.VK_V);
@@ -361,7 +261,10 @@ public class MenuBar extends JMenuBar {
 
     // --- Обработчики действий меню с интеграцией StatusBar ---
 
-    private void loadFractal() {
+    /**
+     * Загружает фрактал из файла.
+     */
+    public void loadFractal() {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Загрузить состояние фрактала");
         fileChooser.setFileFilter(new FileNameExtensionFilter("Файлы состояния (*.frac)", "frac"));
@@ -468,6 +371,11 @@ public class MenuBar extends JMenuBar {
         }
     }
 
+    /**
+     * Изменяет максимальное количество итераций для рендеринга фрактала.
+     * Используется через ActionListener в createViewMenu().
+     */
+    @SuppressWarnings("unused")
     private void changeMaxIterations() {
         
         String currentIterationsStr = Integer.toString(viewModel.getCurrentState().getMaxIterations());
@@ -560,6 +468,11 @@ public class MenuBar extends JMenuBar {
     }
 
 
+    /**
+     * Открывает диалог настройки анимации фрактала.
+     * Используется через ActionListener в createAnimationMenu().
+     */
+    @SuppressWarnings("unused")
     private void openAnimationSetupDialog() {
         // Проверяем, не идет ли основной рендеринг
         if (fractalPanel.isRendering) {

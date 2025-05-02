@@ -7,6 +7,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
+ * CommandFactory отвечает только за создание команд
+ * KeyboardShortcutManager управляет привязкой горячих клавиш
+ * MenuBar фокусируется на создании интерфейса меню
      * 
      * Архитектура привязки клавиатурных сочетаний в проекте построена на нескольких классических шаблонах проектирования:
 
@@ -96,6 +99,24 @@ public class KeyboardShortcutManager {
             menuItem.setEnabled(command.isEnabled());
             menuBindings.put(menuItem, keyStroke);
         }
+    }
+    
+    /**
+     * Создает пункт меню и привязывает его к указанной горячей клавише.
+     * @param keyStroke Горячая клавиша
+     * @return Созданный и настроенный пункт меню, или null если команда не найдена
+     */
+    public JMenuItem createMenuItem(KeyStroke keyStroke) {
+        AppCommand command = shortcutMap.get(keyStroke);
+        if (command != null) {
+            JMenuItem menuItem = new JMenuItem(command.getName());
+            menuItem.setAccelerator(keyStroke);
+            menuItem.addActionListener(e -> command.execute());
+            menuItem.setEnabled(command.isEnabled());
+            menuBindings.put(menuItem, keyStroke);
+            return menuItem;
+        }
+        return null;
     }
     
     /**

@@ -7,7 +7,8 @@ import model.ColorScheme;
 import model.FractalState;
 import render.FractalRenderer;
 import utils.ComplexNumber;
-import utils.CoordinateConverter;
+import utils.Converter;
+// Импорт ViewModel для управления состоянием фрактала
 import viewmodel.FractalViewModel;
 
 import javax.swing.*;
@@ -38,7 +39,8 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
     }
 
 
-    protected final FractalViewModel viewModel; // <-- protected
+    // ViewModel для управления состоянием и логикой отображения фрактала
+protected final FractalViewModel viewModel;
     protected volatile BufferedImage fractalImage; // <-- protected
     protected final FractalRenderer renderer; // <-- protected
     protected final MouseZoomListener zoomListener; // <-- protected
@@ -120,7 +122,7 @@ public class FractalPanel extends JPanel implements PropertyChangeListener {
             return;
         }
 
-        ComplexNumber c = CoordinateConverter.screenToComplex(screenPoint.x, screenPoint.y, w, h, currentState.getViewport());
+        ComplexNumber c = Converter.screenToComplex(screenPoint.x, screenPoint.y, w, h, currentState.getViewport());
 
         if (c == null) {
             String errorMsg = "Невозможно открыть окно Жюлиа: не удалось преобразовать координаты.";

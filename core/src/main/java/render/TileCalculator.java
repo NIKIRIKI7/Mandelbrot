@@ -9,8 +9,8 @@ import java.util.List;
 public class TileCalculator {
 
     /**
-     * Divides the specified image dimensions into tiles of a given size.
-     * The last row/column of tiles might be smaller if dimensions are not divisible.
+     * Делит заданные размеры изображения на фрагменты заданного размера.
+     * Последняя строка/столбец фрагментов может быть меньше, если размеры не делятся.
      *
      * @param imageWidth  Total width of the image.
      * @param imageHeight Total height of the image.
